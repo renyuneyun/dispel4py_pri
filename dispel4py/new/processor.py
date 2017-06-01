@@ -44,6 +44,15 @@ from dispel4py.core import GROUPING
 from dispel4py.utils import make_hash
 from dispel4py.new.mappings import config
 
+from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
+from dispel4py.core import GenericPE
+
+
+from typing import Dict, Iterable, List, Tuple, Union
+IOMapping = Dict[int, Dict[str, List[int]]]
+Partition = List[Union[WorkflowGraph, GenericPE]]
+
+
 STATUS_ACTIVE = 10
 STATUS_INACTIVE = 11
 STATUS_TERMINATED = 12
@@ -191,7 +200,7 @@ class OneToAllCommunication(object):
         return self.destinations
 
 
-def _getConnectedInputs(node, graph):
+def _getConnectedInputs(node: WorkflowNode, graph: WorkflowGraph) -> list:
     names = []
     for edge in graph.edges(node, data=True):
         direction = edge[2]['DIRECTION']
@@ -202,12 +211,12 @@ def _getConnectedInputs(node, graph):
     return names
 
 
-def _getNumProcesses(size, numSources, numProcesses, totalProcesses):
+def _getNumProcesses(size: int, numSources: int, numProcesses: int, totalProcesses: int) -> int:
     div = max(1, totalProcesses - numSources)
     return int(numProcesses * (size - numSources) / div)
 
 
-def _assign_processes(workflow, size):
+def _assign_processes(workflow: WorkflowGraph, size: int) -> (bool, List[str], Dict[str, Iterable[int]]):
     graph = workflow.graph
     processes = {}
     success = True
@@ -260,7 +269,7 @@ def _getCommunication(rank, source_processes,
     return communication
 
 
-def _create_connections(graph, node, processes):
+def _create_connections(graph: WorkflowGraph, node: WorkflowNode, processes: Dict[str, Iterable[int]]) -> (IOMapping, IOMapping):
     pe = node.getContainedObject()
     inputmappings = {i: {} for i in processes[pe.id]}
     outputmappings = {i: {} for i in processes[pe.id]}
@@ -294,7 +303,7 @@ def _create_connections(graph, node, processes):
     return inputmappings, outputmappings
 
 
-def _connect(workflow, processes):
+def _connect(workflow: WorkflowGraph, processes: Dict[str, Iterable[int]]) -> (IOMapping, IOMapping):
     graph = workflow.graph
     outputmappings = {}
     inputmappings = {}
@@ -305,7 +314,7 @@ def _connect(workflow, processes):
     return inputmappings, outputmappings
 
 
-def assign_and_connect(workflow, size):
+def assign_and_connect(workflow: WorkflowGraph, size: int) -> Union[Tuple[Dict[int, Iterable[int]], IOMapping, IOMapping], None]:
     success, sources, processes = _assign_processes(workflow, size)
     if success:
         inputmappings, outputmappings = _connect(workflow, processes)
@@ -315,10 +324,8 @@ def assign_and_connect(workflow, size):
 
 import copy
 
-from dispel4py.workflow_graph import WorkflowGraph
 
-
-def get_partitions(workflow):
+def get_partitions(workflow: WorkflowGraph) -> List[Partition]:
     try:
         partitions = workflow.partitions
     except AttributeError:
@@ -336,7 +343,7 @@ def get_partitions(workflow):
     return partitions
 
 
-def create_partitioned(workflow_all):
+def create_partitioned(workflow_all: WorkflowGraph) -> WorkflowGraph:
     processes_all, inputmappings_all, outputmappings_all = \
         assign_and_connect(workflow_all, len(workflow_all.graph.nodes()))
     proc_to_pe_all = {v[0]: k for k, v in processes_all.items()}
@@ -470,8 +477,6 @@ def _map_outputs_from_pes(data):
 def _no_map(data):
     return data
 
-
-from dispel4py.core import GenericPE
 
 
 def _is_root(node, workflow):
