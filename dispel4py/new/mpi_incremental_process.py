@@ -391,23 +391,26 @@ class MPIIncWrapper(GenericWrapper):
     def create_communication_for_output(self, output_name: str):
         dbg1("[{}] creating communication for output: {}".format(rank, output_name))
         target_ranks = self.request_target(output_name, get_communication=False)
-        node = self.workflow.objToNode[self.pe]
-        graph = self.workflow.graph
-        dbg2("[{}] creating communications")
-        for edge in graph.edges(node, data=True):
-            if edge[2]['DIRECTION'][0] == self.pe:
-                allconnections = edge[2]['ALL_CONNECTIONS']
-                for (source_output, dest_input) in allconnections:
-                    if source_output == output_name:
-                        try:
-                            groupingtype = edge[2]['DIRECTION'][1].inputconnections[dest_input][GROUPING]
-                        except KeyError:
-                            groupingtype = None
-                        communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype=groupingtype)
-                        if output_name not in self.targets:
-                            self.targets[output_name] = []
-                        self.targets[output_name].append((dest_input, communication))
-        dbg1("[{}] created communication for output: {} {}".format(rank, output_name, communication))
+        if target_ranks:
+            node = self.workflow.objToNode[self.pe]
+            graph = self.workflow.graph
+            dbg2("[{}] creating communications")
+            for edge in graph.edges(node, data=True):
+                if edge[2]['DIRECTION'][0] == self.pe:
+                    allconnections = edge[2]['ALL_CONNECTIONS']
+                    for (source_output, dest_input) in allconnections:
+                        if source_output == output_name:
+                            try:
+                                groupingtype = edge[2]['DIRECTION'][1].inputconnections[dest_input][GROUPING]
+                            except KeyError:
+                                groupingtype = None
+                            communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype=groupingtype)
+                            if output_name not in self.targets:
+                                self.targets[output_name] = []
+                            self.targets[output_name].append((dest_input, communication))
+            dbg1("[{}] created communication for output: {} {}".format(rank, output_name, communication))
+        else:
+            dbg1("[{}] no targets, won't create communication".format(rank))
 
     def _read(self):
         dbg1("[{}] _read".format(rank))
@@ -470,8 +473,8 @@ class MPIIncWrapper(GenericWrapper):
     def _terminate(self):
         dbg1("[{}] _terminate".format(rank))
         for output, targets in self.targets.items():
-            #for (inputName, communication) in targets:
-            for communication in targets:
+            for (inputName, communication) in targets:
+            #for communication in targets:
                 for i in communication.destinations:
                     # self.pe.log('Terminating consumer %s' % i)
                     comm.isend(None, tag=STATUS_TERMINATED, dest=i)
