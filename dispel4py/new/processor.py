@@ -159,9 +159,18 @@ class GenericWrapper(object):
 
 
 class ShuffleCommunication(object):
-    def __init__(self, rank, sources, destinations):
+    '''
+    def __init__(self, destinations, rank, sources)
+    def __init__(self, destinations, initialIndex)
+    '''
+    def __init__(self, destinations, *args):
         self.destinations = destinations
-        self.currentIndex = (sources.index(rank) % len(self.destinations)) - 1
+        try:
+            rank, sources = args
+            self.currentIndex = (sources.index(rank) % len(self.destinations)) - 1
+        except ValueError:
+            initialIndex = args[0]
+            self.currentIndex = initialIndex - 1
         self.name = None
 
     def getDestination(self, data):
@@ -171,8 +180,8 @@ class ShuffleCommunication(object):
 
 class GroupByCommunication(object):
     def __init__(self, destinations, input_name, groupby):
-        self.groupby = groupby
         self.destinations = destinations
+        self.groupby = groupby
         self.input_name = input_name
         self.name = groupby
 
@@ -248,25 +257,46 @@ def _assign_processes(workflow: WorkflowGraph, size: int) -> (bool, List[str], D
             node_counter = node_counter + prcs
     return success, sources, processes
 
-
-def _getCommunication(rank, source_processes,
-                      dest, dest_input, dest_processes):
-    communication = ShuffleCommunication(
-        rank, source_processes, dest_processes)
+def _getCommunication(*args, groupingtype=None):
+    '''
+    def _getCommunication(rank, source_processes,
+                          dest, dest_input, dest_processes)
+    def _getCommunication(source_index, dest_input, dest_processes,
+                          groupingtype=None)
+    '''
     try:
-        if GROUPING in dest.inputconnections[dest_input]:
-            groupingtype = dest.inputconnections[dest_input][GROUPING]
+        rank, source_processes, dest, dest_input, dest_processes = args
+        communication = ShuffleCommunication(
+            rank, source_processes, dest_processes)
+        try:
+            if GROUPING in dest.inputconnections[dest_input]:
+                groupingtype = dest.inputconnections[dest_input][GROUPING]
+                if isinstance(groupingtype, list):
+                    communication = GroupByCommunication(
+                        dest_processes, dest_input, groupingtype)
+                elif groupingtype == 'all':
+                    communication = OneToAllCommunication(dest_processes)
+                elif groupingtype == 'global':
+                    communication = AllToOneCommunication(dest_processes)
+        except KeyError:
+            print("No input '%s' defined for PE '%s'" % (dest_input, dest.id))
+            raise
+        return communication
+    except ValueError:
+        try:
+            source_index, dest_input, dest_processes = args
+        except ValueError:
+            source_index, dest_input, dest_processes, groupingtype = args
+        if not groupingtype:
+            communication = ShuffleCommunication(dest_processes, source_index)
+        else:
             if isinstance(groupingtype, list):
-                communication = GroupByCommunication(
-                    dest_processes, dest_input, groupingtype)
+                communication = GroupByCommunication(dest_processes, dest_input, groupingtype)
             elif groupingtype == 'all':
                 communication = OneToAllCommunication(dest_processes)
             elif groupingtype == 'global':
                 communication = AllToOneCommunication(dest_processes)
-    except KeyError:
-        print("No input '%s' defined for PE '%s'" % (dest_input, dest.id))
-        raise
-    return communication
+        return communication
 
 
 def _create_connections(graph: WorkflowGraph, node: WorkflowNode, processes: Dict[str, Iterable[int]]) -> (IOMapping, IOMapping):
