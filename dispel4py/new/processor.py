@@ -160,17 +160,17 @@ class GenericWrapper(object):
 
 class ShuffleCommunication(object):
     '''
-    def __init__(self, destinations, rank, sources)
-    def __init__(self, destinations, initialIndex)
+    def __init__(self, rank, sources, destinations)
+    def __init__(self, initialIndex, destinations)
     '''
-    def __init__(self, destinations, *args):
-        self.destinations = destinations
+    def __init__(self, *args):
         try:
-            rank, sources = args
-            self.currentIndex = (sources.index(rank) % len(self.destinations)) - 1
+            rank, sources, destinations = args
+            self.currentIndex = (sources.index(rank) % len(destinations)) - 1
         except ValueError:
-            initialIndex = args[0]
+            initialIndex, destinations = args
             self.currentIndex = initialIndex - 1
+        self.destinations = destinations
         self.name = None
 
     def getDestination(self, data):
@@ -288,7 +288,7 @@ def _getCommunication(*args, groupingtype=None):
         except ValueError:
             source_index, dest_input, dest_processes, groupingtype = args
         if not groupingtype:
-            communication = ShuffleCommunication(dest_processes, source_index)
+            communication = ShuffleCommunication(source_index, dest_processes)
         else:
             if isinstance(groupingtype, list):
                 communication = GroupByCommunication(dest_processes, dest_input, groupingtype)
