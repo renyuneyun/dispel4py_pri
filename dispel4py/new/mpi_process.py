@@ -156,6 +156,7 @@ class MPIWrapper(GenericWrapper):
         self.pe.rank = rank
         self.provided_inputs = provided_inputs
         self.terminated = 0
+        self.fd = open('outputs/mpi/{}'.format(pe.id), 'a')
 
     def _read(self):
         result = super(MPIWrapper, self)._read()
@@ -177,11 +178,13 @@ class MPIWrapper(GenericWrapper):
         return msg, tag
 
     def _write(self, name, data):
+        #self.fd.write("[{}] {}\n".format(name, data))
         try:
             targets = self.targets[name]
         except KeyError:
             # no targets
-            # self.pe.log('Produced output: %s' % {name: data})
+            self.pe.log('Produced output: %s' % {name: data})
+            self.fd.write("[{}] {}\n".format(name, data))
             return
         for (inputName, communication) in targets:
             output = {inputName: data}
