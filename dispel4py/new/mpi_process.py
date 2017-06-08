@@ -69,6 +69,7 @@ def mpi_excepthook(type, value, trace):
     Sending abort to all processes if an exception is raised.
     '''
     if rank == 0:
+        print(type, value)
         traceback.print_tb(trace)
     comm.Abort(1)
 

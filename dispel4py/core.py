@@ -277,3 +277,6 @@ Example implementation::
         except KeyError:
             raise Exception("Can't write data: Unknown output connection\
                             '%s' for PE '%s'" % (name, type(self).__name__))
+
+    def __str__(self):
+        return "PE<{}>".format(self.id)
