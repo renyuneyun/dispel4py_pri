@@ -387,7 +387,8 @@ class MPIIncWrapper(GenericWrapper):
                         dbg2("[{}] created communication for targets: {} {} {}".format(rank, dest_input, target_ranks, communication))
             dbg1("[{}] created communication for output: {} {}".format(rank, output_name, self.targets[output_name]))
         else:
-            dbg1("[{}] no targets, won't create communication".format(rank))
+            self.targets[output_name] = []
+            dbg1("[{}] no targets, create dummy communication".format(rank))
 
     def _read(self):
         dbg1("[{}] _read".format(rank))
@@ -418,14 +419,13 @@ class MPIIncWrapper(GenericWrapper):
         if name not in self.targets:
             dbg1("[{}] target not existing".format(rank))
             self.create_communication_for_output(name)
-        try:
-            targets = self.targets[name]
-            dbg3("[{}] targets got: {}".format(rank, targets))
-        except KeyError: # no targets
+        if not self.targets[name]:  # coordinator replied no targets
             self.pe.log('Produced output: %s' % {name: data})
             self.fd.write('[{}] {}\n'.format(name, data))
-            dbg1("[{}] _write returning (encountered KeyError)".format(rank))
+            dbg1("[{}] _write returning (no targets)".format(rank))
             return
+        targets = self.targets[name]
+        dbg3("[{}] targets got: {}".format(rank, targets))
         for (inputName, communication) in targets:
             dbg3("[{}] communication:{}".format(rank, communication))
             output = {inputName: data}
@@ -449,7 +449,6 @@ class MPIIncWrapper(GenericWrapper):
         dbg1("[{}] _terminate".format(rank))
         for output, targets in self.targets.items():
             for (inputName, communication) in targets:
-            #for communication in targets:
                 for i in communication.destinations:
                     # self.pe.log('Terminating consumer %s' % i)
                     comm.isend(None, tag=STATUS_TERMINATED, dest=i)
