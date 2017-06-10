@@ -179,7 +179,8 @@ class MPIWrapper(GenericWrapper):
         return msg, tag
 
     def _write(self, name, data):
-        #self.fd.write("[{}] {}\n".format(name, data))
+        if not self.pe.inputconnections:
+            self.fd.write("[{}] {}\n".format(name, data))
         try:
             targets = self.targets[name]
         except KeyError:

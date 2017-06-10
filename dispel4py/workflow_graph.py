@@ -217,6 +217,26 @@ class WorkflowGraph(object):
                                          toPE, toConnection)
             self.graph.remove_nodes_from(toRemove)
 
+    def outputEdges(self, pe: GenericPE):
+        node = self.objToNode[pe]
+        for edge in self.graph.edges(node, data=True):
+            if edge[2]['DIRECTION'][0] == pe:
+                yield edge
+
+    def outputConnections(self, pe: GenericPE):
+        for edge in self.outputEdges(pe):
+            yield edge[2]['DIRECTION'][1], edge[2]['ALL_CONNECTIONS']
+
+    def inputEdges(self, pe: GenericPE):
+        node = self.objToNode[pe]
+        for edge in self.graph.edges(node, data=True):
+            if edge[2]['DIRECTION'][1] == pe:
+                yield edge
+
+    def inputConnections(self, pe: GenericPE):
+        for edge in self.inputEdges(pe):
+            yield edge[2]['DIRECTION'][0], edge[2]['ALL_CONNECTIONS']
+
 
 def _create_dot(graph, instanceNames={}, counter=0):
     dot = ''

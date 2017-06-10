@@ -85,9 +85,11 @@ def mpi_excepthook(type, value, trace):
     '''
     Sending abort to all processes if an exception is raised.
     '''
-    if rank == 0:
-        print(type, value)
-        traceback.print_tb(trace)
+    #if rank == 0:
+    print("###Exception encountered###")
+    print("Type:", type)
+    print("Value:", value)
+    traceback.print_tb(trace)
     comm.Abort(1)
 
 
@@ -146,12 +148,13 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             return len(self.task_list) - 1
         def find_assignable(self, numproc=1, is_source=False) -> List[int]:
             assignables = []
-            if is_source:
-                prcs = 1
+            #if is_source:
+            #    prcs = 1
             #elif self.numSources > 0 and self.totalProcesses > 0:
             #    prcs = processor._getNumProcesses(self.size, self.numSources, numproc, self.totalProcesses)
-            else:
-                prcs = numproc
+            #else:
+            #    prcs = numproc
+            prcs = 1
             for i, pe in enumerate(self.task_list):
                 if i == 0: continue
                 if pe == None:
@@ -218,23 +221,21 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
                 else:
                     outputmappings[node_rank][output].update(mapping)
 
-    def assign_node(workflow: WorkflowGraph, pe: GenericPE, task_list: TaskList, is_source=False) -> List[int]:
+    def assign_node(workflow: WorkflowGraph, pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
         dbg2("[assign_node]")
         target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source)
         dbg3("[assign_node] target_ranks:{}".format(target_ranks))
         for target_rank in target_ranks:
             dbg1("[assign_node] assigning:{}".format(target_rank))
-            #comm.send(pe, target_rank, tag=TAG_DEPLOY)
             comm.send(pe.id, target_rank, tag=TAG_DEPLOY) #Is pe.id reliable for different processes (original mpi version assumes this)?
             dbg1("[assign_node] assigning:{} pe sent:{}".format(target_rank, pe.id))
             comm.send(target_ranks, target_rank, tag=TAG_BROTHER)
-            dbg1("[assign_node] assigning:{} brothers sent:{}".format(target_rank,target_ranks))
+            dbg1("[assign_node] assigning:{} brothers sent:{}".format(target_rank, target_ranks))
             task_list.assign(target_rank, pe)
             dbg3("[assign_node] assigning:{} assignment recorded".format(target_rank))
         dbg2("[assign_node] finishing")
         return target_ranks
 
-    #def onRequire(output_name: str, source_rank: int, workflow: WorkflowGraph, task_list: TaskList, outputmappings: IOMapping):
     def onRequire(output_name: str, source_rank: int, workflow: WorkflowGraph, task_list: TaskList):
         dbg1("[coordinator] onRequire")
         source_pe = task_list.get_node(source_rank)
@@ -244,9 +245,9 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         target_wfNodes = []
         for (linked_wfNode, attributes) in workflow.graph[source_wfNode].items():
             if attributes['DIRECTION'][0] == source_pe:
-                for fromConnection, _ in attributes['ALL_CONNECTIONS']:
+                for fromConnection, toConnection in attributes['ALL_CONNECTIONS']:
                     if fromConnection == output_name:
-                        target_wfNodes.append(linked_wfNode)
+                        target_wfNodes.append((toConnection, linked_wfNode))
                         dbg4("[coordinator] target_wfNode found: {}".format(linked_wfNode))
         if not target_wfNodes:
             dbg1("[coordinator] encountered finial node of stream: {} [{}]".format(output_name, source_rank))
@@ -254,37 +255,25 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             dbg1("[coordinator] targets:{} sent to {}".format([], source_rank))
             return
         dbg3("[coordinator] looping wfNodes: {}".format(target_wfNodes))
-        all_indices = [] # Nested list - each element is another list (containing int)
-        for required_pe in (wfNode.getContainedObject() for wfNode in target_wfNodes):
+        all_indices = {}
+        for (input_name, required_pe) in ((toConnection, wfNode.getContainedObject()) for (toConnection, wfNode) in target_wfNodes):
             dbg3("[coordinator] required_pe: {}".format(required_pe))
             dbg4("[coordinator] looking up if exists")
             indices = task_list.lookup(required_pe)
             dbg2("[coordinator] lookup finished: {}".format(indices))
             if len(indices) == 0:
                 dbg2("[coordinator] no existing")
-                indices = assign_node(workflow, required_pe, task_list)
+                indices = assign_node(workflow, required_pe, task_list, is_source=False)
                 dbg3("[coordinator] new nodes assigned: {}".format(indices))
-                # Won't work on circles
-                #dbg2("[coordinator] updating outputmappings: {}".format(outputmappings))
-                #update_outputmappings(source_pe, required_pe, indices, outputmappings)
-                #dbg2("[coordinator] outputmappings updated: {}".format(outputmappings))
-            all_indices.append(indices)
-            #dbg2("[coordinator] updating outputmappings: {}".format(outputmappings))
-            #update_outputmappings(source_pe, required_pe, indices, outputmappings)
-            #dbg2("[coordinator] outputmappings updated: {}".format(outputmappings))
+            all_indices[(input_name, required_pe.id)] = indices
         dbg1("[coordinator] sending targets to {}".format(source_rank))
-        comm.send(indices, source_rank, tag=TAG_TARGET)
+        comm.send(all_indices, source_rank, tag=TAG_TARGET)
         dbg1("[coordinator] targets sent: {}".format(indices))
-
-        #dbg1("[coordinator] sending outputmapping to {}".format(source_rank))
-        #comm.send(outputmappings[source_rank][output_name], source_rank, tag=TAG_OUTPUT_MAPPING)
-        #dbg1("[coordinator] outputmapping sent: {}".format(outputmappings[source_rank]))
 
     dbg0("[coordinator]")
     dbg3("[coordinator] initialising")
     initial_nodes, numProcesses = getWorkflowProperty(workflow)
     task_list = TaskList(size, len(initial_nodes), numProcesses)
-    #outputmappings = {}
     dbg2("[coordinator] going to deploy initial nodes")
     for node in initial_nodes:
         assign_node(workflow, node, task_list, is_source=True)
@@ -299,7 +288,6 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         source_rank = status.Get_source()
         dbg1("[coordinator] request got: {} [from:{}]".format(msg, source_rank))
         if tag == TAG_REQUIRE:
-            #onRequire(msg, source_rank, workflow, task_list, outputmappings)
             onRequire(msg, source_rank, workflow, task_list)
         elif tag == STATUS_TERMINATED:
             dbg0("[coordinator] onFinish")
@@ -319,7 +307,6 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
 
 
 def executor(workflow, inputs, args):
-    #FIXME: workflow not used; remove it if really no need
     dbg0("[executor {}]".format(rank))
     status = MPI.Status()
     id_to_pe = {pe.id:pe for pe in (wfNode.getContainedObject() for wfNode in workflow.graph.nodes())}
@@ -355,7 +342,7 @@ def process(workflow, inputs, args):
 
 class MPIIncWrapper(GenericWrapper):
 
-    def __init__(self, workflow: WorkflowGraph, pe, brothers=[], provided_inputs=None):
+    def __init__(self, workflow: WorkflowGraph, pe: GenericPE, brothers=[], provided_inputs=None):
         GenericWrapper.__init__(self, pe)
         self.workflow = workflow
         self.pe.log = types.MethodType(simpleLogger, pe)
@@ -363,52 +350,42 @@ class MPIIncWrapper(GenericWrapper):
         self.brothers = brothers
         self.provided_inputs = provided_inputs
         self.terminated = 0
-        self._num_sources = len(pe.inputconnections)
+        self._num_sources = len(list(self.workflow.inputEdges(pe)))
         self.targets = {}
         self.fd = open("outputs/mpi_inc/{}".format(pe.id), 'a')
 
-    def request_target(self, target: str, get_communication=True):
+    def request_target(self, target: str):
         dbg1("[{}] request_target: {}".format(rank, target))
         comm.send(target, RANK_COORDINATOR, tag=TAG_REQUIRE)
         dbg1("[{}] request sent".format(rank))
         dbg1("[{}] waiting for replies".format(rank))
-        target_ranks = comm.recv(source=RANK_COORDINATOR, tag=TAG_TARGET)
-        dbg1("[{}] [reply] target_ranks: {}".format(rank, target_ranks))
-        if not target_ranks:
+        target_ranks_list = comm.recv(source=RANK_COORDINATOR, tag=TAG_TARGET)
+        dbg1("[{}] [reply] target_ranks_list: {}".format(rank, target_ranks_list))
+        if not target_ranks_list:
             return []
-        if get_communication:
-            output_mapping = comm.recv(source=RANK_COORDINATOR, tag=TAG_OUTPUT_MAPPING)
-            dbg1("[{}] [reply] output_mapping: {}".format(rank, output_mapping))
-            self.inform_output(target, output_mapping)
         dbg2("[{}] request_target finished".format(rank))
-        return target_ranks
-
-    def inform_output(self, output_name: str, output_mapping: List[Tuple[str,'Communication']]):
-        dbg3("[{}] self.targets updating: [{}: {}]".format(rank, output_name, output_mapping))
-        self.targets[output_name] = output_mapping
-        dbg3("[{}] self.targets updated: {}".format(rank, self.targets))
+        return target_ranks_list
 
     def create_communication_for_output(self, output_name: str):
         dbg1("[{}] creating communication for output: {}".format(rank, output_name))
-        target_ranks = self.request_target(output_name, get_communication=False)
-        if target_ranks:
-            node = self.workflow.objToNode[self.pe]
-            graph = self.workflow.graph
+        target_ranks_list = self.request_target(output_name)
+        if target_ranks_list:
             dbg2("[{}] creating communications")
-            for edge in graph.edges(node, data=True):
-                if edge[2]['DIRECTION'][0] == self.pe:
-                    allconnections = edge[2]['ALL_CONNECTIONS']
-                    for (source_output, dest_input) in allconnections:
-                        if source_output == output_name:
-                            try:
-                                groupingtype = edge[2]['DIRECTION'][1].inputconnections[dest_input][GROUPING]
-                            except KeyError:
-                                groupingtype = None
-                            communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype=groupingtype)
-                            if output_name not in self.targets:
-                                self.targets[output_name] = []
-                            self.targets[output_name].append((dest_input, communication))
-            dbg1("[{}] created communication for output: {} {}".format(rank, output_name, communication))
+            for target_pe, allconnections in self.workflow.outputConnections(self.pe):
+                dbg3("[{}] target_pe:{} allconnections: {}".format(rank, target_pe, allconnections))
+                for (source_output, dest_input) in allconnections:
+                    if source_output == output_name:
+                        target_ranks = target_ranks_list[(dest_input, target_pe.id)]
+                        try:
+                            groupingtype = target_pe.inputconnections[dest_input][GROUPING]
+                        except KeyError:
+                            groupingtype = None
+                        communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype=groupingtype)
+                        if output_name not in self.targets:
+                            self.targets[output_name] = []
+                        self.targets[output_name].append((dest_input, communication))
+                        dbg2("[{}] created communication for targets: {} {} {}".format(rank, dest_input, target_ranks, communication))
+            dbg1("[{}] created communication for output: {} {}".format(rank, output_name, self.targets[output_name]))
         else:
             dbg1("[{}] no targets, won't create communication".format(rank))
 
@@ -436,22 +413,20 @@ class MPIIncWrapper(GenericWrapper):
 
     def _write(self, name, data):
         dbg1("[{}] _write name:{} data:{}".format(rank, name, data))
-        #self.fd.write('[{}] {}\n'.format(name, data))
+        if not self.pe.inputconnections:
+            self.fd.write('[{}] {}\n'.format(name, data))
         if name not in self.targets:
             dbg1("[{}] target not existing".format(rank))
-            #self.request_target(name)
             self.create_communication_for_output(name)
         try:
             targets = self.targets[name]
             dbg3("[{}] targets got: {}".format(rank, targets))
-        except KeyError:
-            # no targets
+        except KeyError: # no targets
             self.pe.log('Produced output: %s' % {name: data})
             self.fd.write('[{}] {}\n'.format(name, data))
             dbg1("[{}] _write returning (encountered KeyError)".format(rank))
             return
         for (inputName, communication) in targets:
-        #for communication in targets:
             dbg3("[{}] communication:{}".format(rank, communication))
             output = {inputName: data}
             dest = communication.getDestination(output)
