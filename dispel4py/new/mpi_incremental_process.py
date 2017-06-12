@@ -69,7 +69,7 @@ from dispel4py.new.processor import IOMapping, Partition
 from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
 from dispel4py.core import GenericPE, GROUPING
 
-DEBUG=1
+DEBUG=-1
 def debug_fn(level:int):
     def fn(msg: str):
         if DEBUG >= level:
@@ -86,7 +86,7 @@ def mpi_excepthook(type, value, trace):
     Sending abort to all processes if an exception is raised.
     '''
     #if rank == 0:
-    print("###Exception encountered###")
+    print("###Exception encountered at rank {}###".format(rank))
     print("Type:", type)
     print("Value:", value)
     traceback.print_tb(trace)
@@ -148,13 +148,13 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             return len(self.task_list) - 1
         def find_assignable(self, numproc=1, is_source=False) -> List[int]:
             assignables = []
-            #if is_source:
-            #    prcs = 1
-            #elif self.numSources > 0 and self.totalProcesses > 0:
-            #    prcs = processor._getNumProcesses(self.size, self.numSources, numproc, self.totalProcesses)
-            #else:
-            #    prcs = numproc
-            prcs = 1
+            if is_source:
+                prcs = 1
+            elif self.numSources > 0 and self.totalProcesses > 0:
+                prcs = processor._getNumProcesses(self.size, self.numSources, numproc, self.totalProcesses)
+            else:
+                prcs = numproc
+            #prcs = 1
             for i, pe in enumerate(self.task_list):
                 if i == 0: continue
                 if pe == None:
@@ -187,39 +187,6 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         def remove(self, index: int):
             self.task_list[index] = None
             dbg2("TaskList after removing: {}".format(self.task_list))
-
-    def setup_outputmappings(source_pe: GenericPE, dest_pe: GenericPE, dest_processes: List[int]) -> IOMapping:
-        dbg2("[coordinator] setup_outputmappings")
-        source_processes = task_list.lookup(source_pe)
-        allconnections = workflow.graph[workflow.objToNode[source_pe]][workflow.objToNode[dest_pe]]['ALL_CONNECTIONS']
-        outputmappings = {i:{} for i in source_processes}
-        dbg2("[coordinator] [setup_outputmappings] inited (source_processes:{} dest:{} allconnections:{})".format(source_processes, dest_pe, allconnections))
-        for i in source_processes:
-            dbg3("[coordinator] [setup_outputmappings] i={}".format(i))
-            for (source_output, dest_input) in allconnections:
-                dbg3("[coordinator] [setup_outputmappings] source_output:{} dest_input:{}".format(source_output, dest_input))
-                communication = processor._getCommunication(
-                    i, source_processes, dest_pe, dest_input, dest_processes)
-                dbg4("[coordinator] [setup_outputmappings] communication: {}".format(communication))
-                try:
-                    outputmappings[i][source_output].append(
-                        (dest_input, communication))
-                except KeyError:
-                    outputmappings[i][source_output] = \
-                        [(dest_input, communication)]
-                dbg3("[coordinator] [setup_outputmappings] outputmapping updated: {}".format(outputmappings))
-        dbg2("[coordinator] setup_outputmappings finish: {}".format(outputmappings))
-        return outputmappings
-
-    def update_outputmappings(source_pe: GenericPE, required_pe: GenericPE, indices: List[int], outputmappings):
-        for node_rank, mappings in setup_outputmappings(source_pe, required_pe, indices).items():
-            if node_rank not in outputmappings:
-                outputmappings[node_rank] = {}
-            for output, mapping in mappings.items():
-                if output not in outputmappings[node_rank]:
-                    outputmappings[node_rank][output] = set(mapping)
-                else:
-                    outputmappings[node_rank][output].update(mapping)
 
     def assign_node(workflow: WorkflowGraph, pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
         dbg2("[assign_node]")
@@ -292,7 +259,6 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         elif tag == STATUS_TERMINATED:
             dbg0("[coordinator] onFinish")
             task_list.remove(source_rank)
-            #outputmappings.pop(source_rank, None) #Nodes with no output connected won't be in the map
             if not task_list.working_nodes(): #Because we know MPI guarentees FIFO for each pair's communication, we can safely say there is no request on-the-fly
                 dbg1("[coordinator] sending finalize communication to all nodes")
                 for i in range(1, size):
@@ -348,11 +314,16 @@ class MPIIncWrapper(GenericWrapper):
         self.pe.log = types.MethodType(simpleLogger, pe)
         self.pe.rank = rank
         self.brothers = brothers
+        self.rep = brothers[0]
         self.provided_inputs = provided_inputs
         self.terminated = 0
         self._num_sources = len(list(self.workflow.inputEdges(pe)))
         self.targets = {}
+        self.pending_messages = {}
         self.fd = open("outputs/mpi_inc/{}".format(pe.id), 'a')
+
+    def is_rep(self):
+        return self.rep == rank
 
     def request_target(self, target: str):
         dbg1("[{}] request_target: {}".format(rank, target))
@@ -370,16 +341,19 @@ class MPIIncWrapper(GenericWrapper):
         dbg1("[{}] creating communication for output: {}".format(rank, output_name))
         target_ranks_list = self.request_target(output_name)
         if target_ranks_list:
-            dbg2("[{}] creating communications")
+            dbg2("[{}] creating communications".format(rank))
             for target_pe, allconnections in self.workflow.outputConnections(self.pe):
                 dbg3("[{}] target_pe:{} allconnections: {}".format(rank, target_pe, allconnections))
                 for (source_output, dest_input) in allconnections:
                     if source_output == output_name:
+                        dbg4("[{}] found dest_input: {}".format(rank, dest_input))
                         target_ranks = target_ranks_list[(dest_input, target_pe.id)]
+                        dbg4("[{}] target_ranks: {}".format(rank, target_ranks))
                         try:
                             groupingtype = target_pe.inputconnections[dest_input][GROUPING]
                         except KeyError:
                             groupingtype = None
+                        dbg4("[{}] groupingtype: {}".format(rank, groupingtype))
                         communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype=groupingtype)
                         if output_name not in self.targets:
                             self.targets[output_name] = []
@@ -399,16 +373,22 @@ class MPIIncWrapper(GenericWrapper):
 
         status = MPI.Status()
         msg = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-        tag = status.Get_tag()
+        source, tag = status.Get_source(), status.Get_tag()
+        dbg2("[{}] message got: {} with tag {} from {}".format(rank, msg, tag, source))
         while tag == STATUS_TERMINATED:
-            self.terminated += 1
-            if self.terminated >= self._num_sources:
-                break
+            if source in self.brothers:
+                assert self.is_rep()
+                assert source != rank
+                self.brothers.remove(source)
             else:
-                msg = comm.recv(source=MPI.ANY_SOURCE,
-                                tag=MPI.ANY_TAG,
-                                status=status)
-                tag = status.Get_tag()
+                self.terminated += 1
+                if self.terminated >= self._num_sources:
+                    break
+            msg = comm.recv(source=MPI.ANY_SOURCE,
+                            tag=MPI.ANY_TAG,
+                            status=status)
+            source, tag = status.Get_source(), status.Get_tag()
+            dbg2("[{}] message got: {} with tag {} from {}".format(rank, msg, tag, source))
         dbg1("[{}] _read returning: {} (tag:{})".format(rank, msg, tag))
         return msg, tag
 
@@ -435,9 +415,11 @@ class MPIIncWrapper(GenericWrapper):
                 try:
                     # self.pe.log('Sending %s to %s' % (output, i))
                     dbg1("[{}] sending {} to {}".format(rank, output, i))
-                    request = comm.isend(output, tag=STATUS_ACTIVE, dest=i)
-                    status = MPI.Status()
-                    request.Wait(status)
+                    request = comm.issend(output, tag=STATUS_ACTIVE, dest=i)
+                    req_key = (name, inputName, i)
+                    if req_key in self.pending_messages:
+                        self.pending_messages[req_key].Free()
+                    self.pending_messages[req_key] = request
                     dbg1("[{}] data sent".format(rank))
                 except:
                     self.pe.log(
@@ -446,12 +428,39 @@ class MPIIncWrapper(GenericWrapper):
         dbg1("[{}] _write returning".format(rank))
 
     def _terminate(self):
-        dbg1("[{}] _terminate".format(rank))
-        for output, targets in self.targets.items():
-            for (inputName, communication) in targets:
-                for i in communication.destinations:
-                    # self.pe.log('Terminating consumer %s' % i)
-                    comm.isend(None, tag=STATUS_TERMINATED, dest=i)
+        dbg1("[{}] _terminate {}".format(rank, 'is rep' if self.is_rep() else 'is not rep'))
+        if self.is_rep():
+            status = MPI.Status()
+            dbg2("[{}] remaining brothers {}".format(rank, self.brothers))
+            while self.brothers[1:]:
+                msg = comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+                source, tag = status.Get_source(), status.Get_tag()
+                dbg1("[{}] message: {} with tag {} from {}".format(rank, msg, tag, source))
+                dbg4("[{}] asserting tag:{} is {}".format(rank, tag, STATUS_TERMINATED))
+                assert tag == STATUS_TERMINATED
+                dbg4("[{}] asserting source:{} in {}".format(rank, source, self.brothers))
+                assert source in self.brothers
+                dbg4("[{}] asserting msg:{} is {}".format(rank, msg, None))
+                assert not msg
+                self.brothers.remove(source)
+
+            for output in self.pe.outputconnections:
+                if output not in self.targets:
+                    self.create_communication_for_output(output)
+                targets = self.targets[output]
+                for (inputName, communication) in targets:
+                    for i in communication.destinations:
+                        # self.pe.log('Terminating consumer %s' % i)
+                        comm.isend(None, tag=STATUS_TERMINATED, dest=i)
+        else:
+            dbg1("[{}] waiting for data to be received by all targets {}".format(rank, self.pending_messages))
+            MPI.Request.Waitall(list(self.pending_messages.values()))
+            dbg1("[{}] data received by all targets".format(rank))
+            #for req in self.pending_messages.values():
+            #    req.Free()
+            dbg1("[{}] sending terminate to rep".format(rank))
+            comm.send(None, self.rep, tag=STATUS_TERMINATED)
+            dbg1("[{}] terminate sent to rep".format(rank))
         dbg1("[{}] sending terminate to coordinator".format(rank))
         comm.send(None, RANK_COORDINATOR, tag=STATUS_TERMINATED)
         dbg1("[{}] terminate sent to coordinator".format(rank))
