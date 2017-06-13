@@ -223,9 +223,13 @@ class WorkflowGraph(object):
             if edge[2]['DIRECTION'][0] == pe:
                 yield edge
 
-    def outputConnections(self, pe: GenericPE):
+    def outputConnections(self, pe: GenericPE, emit_pe: bool=True):
         for edge in self.outputEdges(pe):
-            yield edge[2]['DIRECTION'][1], edge[2]['ALL_CONNECTIONS']
+            if emit_pe:
+                first = edge[2]['DIRECTION'][1]
+            else:
+                first = edge[1]
+            yield first, edge[2]['ALL_CONNECTIONS']
 
     def inputEdges(self, pe: GenericPE):
         node = self.objToNode[pe]

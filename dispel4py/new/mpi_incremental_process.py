@@ -48,6 +48,7 @@ For example::
     TestOneInOneOut5 (rank 2): Processed 5 iterations.
 '''
 
+from threading import Thread, Lock
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -117,6 +118,9 @@ TAG_FINALIZE = 100
 RANK_COORDINATOR=0
 
 def coordinator(workflow: WorkflowGraph, inputs, args):
+    task_counter = 0
+    pe_locks = {node.getContainedObject(): Lock() for node in workflow.graph.nodes()}
+
     def getWorkflowProperty(workflow: WorkflowGraph) -> Tuple[List[GenericPE], int]:
         def initial_nodes(workflow: WorkflowGraph) -> List[GenericPE]:
             graph = workflow.graph
@@ -175,6 +179,11 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
                     working.append(i)
             dbg4("[TaskList] working_nodes: {}".format(working))
             return working
+        def has_working_nodes(self) -> bool:
+            for pe in self.task_list[1:]:
+                if pe != None:
+                    return True
+            return False
         def lookup(self, target_pe: GenericPE) -> List[int]:
             matches = []
             for i, pe in enumerate(self.task_list):
@@ -190,7 +199,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
 
     def assign_node(workflow: WorkflowGraph, pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
         dbg2("[assign_node]")
-        target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source)
+        target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source) #Needs list lock
         dbg3("[assign_node] target_ranks:{}".format(target_ranks))
         for target_rank in target_ranks:
             dbg1("[assign_node] assigning:{}".format(target_rank))
@@ -198,44 +207,35 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             dbg1("[assign_node] assigning:{} pe sent:{}".format(target_rank, pe.id))
             comm.send(target_ranks, target_rank, tag=TAG_BROTHER)
             dbg1("[assign_node] assigning:{} brothers sent:{}".format(target_rank, target_ranks))
-            task_list.assign(target_rank, pe)
+            task_list.assign(target_rank, pe) #Needs list lock
             dbg3("[assign_node] assigning:{} assignment recorded".format(target_rank))
         dbg2("[assign_node] finishing")
         return target_ranks
 
     def onRequire(output_name: str, source_rank: int, workflow: WorkflowGraph, task_list: TaskList):
+        nonlocal task_counter
         dbg1("[coordinator] onRequire")
-        source_pe = task_list.get_node(source_rank)
+        source_pe = task_list.get_node(source_rank) # Exists and won't disappear, so don't need lock
         dbg2("[coordinator] source_pe: {}".format(source_pe))
-        source_wfNode = workflow.objToNode[source_pe]
-        dbg4("[coordinator] source_wfNode: {}".format(source_wfNode))
-        target_wfNodes = []
-        for (linked_wfNode, attributes) in workflow.graph[source_wfNode].items():
-            if attributes['DIRECTION'][0] == source_pe:
-                for fromConnection, toConnection in attributes['ALL_CONNECTIONS']:
-                    if fromConnection == output_name:
-                        target_wfNodes.append((toConnection, linked_wfNode))
-                        dbg4("[coordinator] target_wfNode found: {}".format(linked_wfNode))
-        if not target_wfNodes:
-            dbg1("[coordinator] encountered finial node of stream: {} [{}]".format(output_name, source_rank))
-            comm.send([], source_rank, tag=TAG_TARGET)
-            dbg1("[coordinator] targets:{} sent to {}".format([], source_rank))
-            return
-        dbg3("[coordinator] looping wfNodes: {}".format(target_wfNodes))
         all_indices = {}
-        for (input_name, required_pe) in ((toConnection, wfNode.getContainedObject()) for (toConnection, wfNode) in target_wfNodes):
-            dbg3("[coordinator] required_pe: {}".format(required_pe))
-            dbg4("[coordinator] looking up if exists")
-            indices = task_list.lookup(required_pe)
-            dbg2("[coordinator] lookup finished: {}".format(indices))
-            if len(indices) == 0:
-                dbg2("[coordinator] no existing")
-                indices = assign_node(workflow, required_pe, task_list, is_source=False)
-                dbg3("[coordinator] new nodes assigned: {}".format(indices))
-            all_indices[(input_name, required_pe.id)] = indices
+        for (required_pe, allconnections) in workflow.outputConnections(source_pe):
+            for (fromConnection, input_name) in allconnections:
+                if fromConnection == output_name:
+                    dbg3("[coordinator] required_pe: {}".format(required_pe))
+                    with pe_locks[required_pe]:
+                        dbg4("[coordinator] looking up if exists")
+                        indices = task_list.lookup(required_pe) # needs global PE lock to know if another source is requiring the same pe
+                        dbg2("[coordinator] lookup finished: {}".format(indices))
+                        if len(indices) == 0:
+                            dbg2("[coordinator] no existing")
+                            indices = assign_node(workflow, required_pe, task_list, is_source=False) #Holds global PE lock
+                            dbg3("[coordinator] new nodes assigned: {}".format(indices))
+                    all_indices[(input_name, required_pe.id)] = indices
+        task_counter -= 1
         dbg1("[coordinator] sending targets to {}".format(source_rank))
         comm.send(all_indices, source_rank, tag=TAG_TARGET)
-        dbg1("[coordinator] targets sent: {}".format(indices))
+        dbg1("[coordinator] targets sent: {}".format(all_indices))
+        #Decrease the counter
 
     dbg0("[coordinator]")
     dbg3("[coordinator] initialising")
@@ -243,7 +243,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
     task_list = TaskList(size, len(initial_nodes), numProcesses)
     dbg2("[coordinator] going to deploy initial nodes")
     for node in initial_nodes:
-        assign_node(workflow, node, task_list, is_source=True)
+        assign_node(workflow, node, task_list, is_source=True) # Parallel and don't need locks (because each other won't interfere and later nodes exist only after creation)
     dbg2("[coordinator] initial nodes deployed")
 
     status = MPI.Status()
@@ -254,12 +254,14 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         msg = comm.recv(tag=tag, status=status)
         source_rank = status.Get_source()
         dbg1("[coordinator] request got: {} [from:{}]".format(msg, source_rank))
-        if tag == TAG_REQUIRE:
-            onRequire(msg, source_rank, workflow, task_list)
-        elif tag == STATUS_TERMINATED:
+        if tag == TAG_REQUIRE: #Add one to a counter; node `source_rank` won't send TERMINATED when onRequire doesn't send targets back
+            task_counter += 1
+            Thread(target=onRequire, args=(msg, source_rank, workflow, task_list)).start()
+            #onRequire(msg, source_rank, workflow, task_list)
+        elif tag == STATUS_TERMINATED: #Happens only when node `source_rank` has all destinations (i.e. no onRequire will be called for this node)
             dbg0("[coordinator] onFinish")
             task_list.remove(source_rank)
-            if not task_list.working_nodes(): #Because we know MPI guarentees FIFO for each pair's communication, we can safely say there is no request on-the-fly
+            if task_counter == 0 and not task_list.working_nodes(): #Because we know MPI guarentees FIFO for each pair's communication, we can safely say there is no request on-the-fly #We need a counter to know whether there are communications being processing by onRequire (which will cause later nodes' creation [and also later nodes' TERMINATED's sending] but currently no nodes are working
                 dbg1("[coordinator] sending finalize communication to all nodes")
                 for i in range(1, size):
                     comm.isend(None, i, tag=TAG_FINALIZE)
