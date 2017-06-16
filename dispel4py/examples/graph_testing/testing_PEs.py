@@ -181,7 +181,7 @@ class PrintDataConsumer(ConsumerPE):
         print(data)
 
 
-class RandomFilter(GenericPE):
+class RealRandomFilter(GenericPE):
     '''
     This PE randomly filters the input.
     '''
@@ -198,6 +198,31 @@ class RandomFilter(GenericPE):
             return {'output': inputs['input']}
             # self.write('output', inputs['input'] )
         return None
+
+class FakeRandomFilter(GenericPE):
+    '''
+    This PE randomly filters the input.
+    '''
+    input_name = 'input'
+    output_name = 'output'
+
+    filter_map = [True, False, True, True, False, True, True, True, False, False, False, False, True]
+
+    def __init__(self):
+        GenericPE.__init__(self)
+        self._add_input('input')
+        self._add_output('output', tuple_type=['word'])
+        self.index = 0
+
+    def process(self, inputs):
+        if FakeRandomFilter.filter_map[self.index]:
+            return {'output': inputs['input']}
+            # self.write('output', inputs['input'] )
+        self.index += 1
+        self.index %= len(filter_map)
+        return None
+
+RandomFilter = FakeRandomFilter
 
 
 class WordCounter(GenericPE):
@@ -220,7 +245,7 @@ class WordCounter(GenericPE):
         return {'output': [word, self.mywords[word]]}
 
 
-class RandomWordProducer(GenericPE):
+class RealRandomWordProducer(GenericPE):
     '''
     This PE produces a random word as an output.
     '''
@@ -235,3 +260,25 @@ class RandomWordProducer(GenericPE):
         word = random.choice(RandomWordProducer.words)
         outputs = {'output': [word]}
         return outputs
+
+class FakeRandomWordProducer(GenericPE):
+    '''
+    This PE produces a random word as an output.
+    '''
+    words = ["dispel4py", "computing", "mpi", "processing",
+             "simple", "analysis", "data"]
+
+    def __init__(self):
+        GenericPE.__init__(self)
+        self._add_output('output', tuple_type=['word'])
+        self.index = 0
+
+    def process(self, inputs=None):
+        word = RandomWordProducer.words[self.index]
+        self.index += 1
+        self.index %= len(FakeRandomWordProducer.words)
+        outputs = {'output': [word]}
+        return outputs
+
+RandomWordProducer = FakeRandomWordProducer
+
