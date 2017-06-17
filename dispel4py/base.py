@@ -145,6 +145,32 @@ class SimpleFunctionPE(IterativePE):
         return self.compute_fn(data, **self.params)
 
 
+class RepeatablePE(GenericPE):
+
+    def __init__(self, numprocesses=1):
+        super(RepeatablePE, self).__init__(numprocesses)
+        self._circuit = {}
+
+    @property
+    def repeatable(self) -> bool:
+        return True
+
+    def _add_circuit(self, output_name: str, input_name: str) -> None:
+        try:
+            self._circuit[output_name].append(input_name)
+        except KeyError:
+            self._circuit[output_name] = [input_name]
+
+    def get_circuit(self, output_name: str) -> list:
+        try:
+            return list(self._circuit[output_name])
+        except KeyError:
+            return []
+
+    def get_circuit_outputs(self) -> list:
+        return list(self._circuit.keys())
+
+
 from dispel4py.workflow_graph import WorkflowGraph
 
 

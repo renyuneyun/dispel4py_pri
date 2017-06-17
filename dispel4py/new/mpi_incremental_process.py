@@ -72,7 +72,7 @@ from dispel4py.new.processor import IOMapping, Partition
 from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
 from dispel4py.core import GenericPE, GROUPING
 
-DEBUG=2
+DEBUG=1
 def debug_fn(level:int):
     def fn(msg: str):
         if DEBUG >= level:
@@ -155,9 +155,9 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         @property
         def size(self):
             return len(self.task_list) - 1
-        def find_assignable(self, numproc=1, is_source=False) -> List[int]:
+        def find_assignable(self, numproc=1, is_source=False, repeatable=False) -> List[int]:
             assignables = []
-            if is_source:
+            if is_source or repeatable:
                 prcs = 1
             elif self.numSources > 0 and self.totalProcesses > 0:
                 prcs = processor._getNumProcesses(self.size, self.numSources, numproc, self.totalProcesses)
@@ -202,9 +202,9 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             self.task_list[index] = None
             dbg2("TaskList after removing: {}".format(self.task_list))
 
-    def assign_node(workflow: WorkflowGraph, pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
+    def assign_node(pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
         dbg2("[assign_node]")
-        target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source) #Needs list lock
+        target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source, repeatable=pe.repeatable) #Needs list lock
         dbg3("[assign_node] target_ranks:{}".format(target_ranks))
         for target_rank in target_ranks:
             dbg1("[assign_node] assigning:{}".format(target_rank))
@@ -223,18 +223,32 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         source_pe = task_list.get_node(source_rank) # Exists and won't disappear, so don't need lock
         dbg2("[coordinator] source_pe: {}".format(source_pe))
         all_indices = {}
-        for (required_pe, allconnections) in workflow.outputConnections(source_pe):
-            for (fromConnection, input_name) in allconnections:
-                if fromConnection == output_name:
-                    dbg3("[coordinator] required_pe: {}".format(required_pe))
-                    with pe_locks[required_pe]:
-                        dbg4("[coordinator] looking up if exists")
-                        indices = task_list.lookup(required_pe) # needs global PE lock to know if another source is requiring the same pe
-                        dbg2("[coordinator] lookup finished: {}".format(indices))
-                        if len(indices) == 0:
-                            dbg2("[coordinator] no existing")
-                            indices = assign_node(workflow, required_pe, task_list, is_source=False) #Holds global PE lock
-                            dbg3("[coordinator] new nodes assigned: {}".format(indices))
+        if not source_pe.repeatable:
+            dbg2("[coordinator] source pe is not repeatable: {}@{}".format(source_pe, source_rank))
+            for (required_pe, allconnections) in workflow.outputConnections(source_pe):
+                for (fromConnection, input_name) in allconnections:
+                    if fromConnection == output_name:
+                        dbg3("[coordinator] required_pe: {}".format(required_pe))
+                        with pe_locks[required_pe]:
+                            dbg4("[coordinator] looking up if exists")
+                            indices = task_list.lookup(required_pe) # needs global PE lock to know if another source is requiring the same pe
+                            dbg2("[coordinator] lookup finished: {}".format(indices))
+                            if len(indices) == 0:
+                                dbg2("[coordinator] no existing")
+                                indices = assign_node(required_pe, task_list, is_source=False) #Holds global PE lock
+                                dbg3("[coordinator] new nodes assigned: {}".format(indices))
+                        all_indices[(input_name, required_pe.id)] = indices
+        else:
+            dbg2("[coordinator] source pe is repeatable: {}@{}".format(source_pe, source_rank))
+            circuit_inputs = source_pe.get_circuit(output_name)
+            dbg3("[coordinator] circuit_inputs {}".format(circuit_inputs))
+            if circuit_inputs:
+                required_pe = source_pe
+                with pe_locks[required_pe]:
+                    dbg3("[coordinator] assigning new repeating nodes")
+                    indices = assign_node(required_pe, task_list, is_source=False)
+                    dbg3("[coordinator] new repeating nodes assigned: {}".format(indices))
+                for input_name in circuit_inputs:
                     all_indices[(input_name, required_pe.id)] = indices
         task_counter -= 1
         dbg1("[coordinator] sending targets to {}".format(source_rank))
@@ -248,7 +262,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
     task_list = TaskList(size, len(initial_nodes), numProcesses)
     dbg2("[coordinator] going to deploy initial nodes")
     for node in initial_nodes:
-        assign_node(workflow, node, task_list, is_source=True) # Parallel and don't need locks (because each other won't interfere and later nodes exist only after creation)
+        assign_node(node, task_list, is_source=True) # Parallel and don't need locks (because each other won't interfere and later nodes exist only after creation)
     dbg2("[coordinator] initial nodes deployed")
 
     status = MPI.Status()
@@ -256,7 +270,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         dbg0("[coordinator] waiting for request")
         msg = direction_comm.recv(status=status)
         source_rank, tag = status.Get_source(), status.Get_tag()
-        dbg1("[coordinator] request got: {} [from:{}]".format(msg, source_rank))
+        dbg1("[coordinator] request got: {} [from:{}] with tag {}".format(msg, source_rank, tag))
         if tag == TAG_REQUIRE: #Add one to a counter; node `source_rank` won't send TERMINATED when onRequire doesn't send targets back
             task_counter += 1
             Thread(target=onRequire, args=(msg, source_rank, workflow, task_list)).start()
@@ -387,11 +401,15 @@ class MPIIncWrapper(MultithreadedWrapper):
         inputs, status = self._read()
         while status != STATUS_TERMINATED:
             if inputs is not None:
-                self.executor.submit(self._new_input, (inputs))
+                if not self.pe.FIFO:
+                    self.executor.submit(self._new_input, (inputs))
+                else:
+                    self._new_input(inputs)
                 #self._new_input(inputs)
             inputs, status = self._read()
-        self.executor.shutdown()
-        dbg1("[{}] executor shutted down".format(rank))
+        if not self.pe.FIFO:
+            self.executor.shutdown()
+            dbg1("[{}] executor shutted down".format(rank))
         self.status = STATUS_TERMINATED
 
     def _listen(self):
@@ -403,17 +421,21 @@ class MPIIncWrapper(MultithreadedWrapper):
         thread2.join()
         dbg1("[{}] listen ends".format(rank))
 
-    def get_communication(self, output_name: str):
+    def get_communication(self, output_name: str, existing=False):
         with self.request_locks[output_name]:
             try:
                 return self.targets[output_name]
             except KeyError:
-                dbg1("[{}] target not existing".format(rank))
-                dbg1("[{}] request_target: {}".format(rank, output_name))
-                self.direction_comm.send(output_name, RANK_COORDINATOR, tag=TAG_REQUIRE)
-                dbg1("[{}] request sent".format(rank))
-                self.request_events[output_name].wait()
-                return self.targets[output_name]
+                if not existing:
+                    dbg1("[{}] target not existing".format(rank))
+                    dbg1("[{}] request_target: {}".format(rank, output_name))
+                    self.direction_comm.send(output_name, RANK_COORDINATOR, tag=TAG_REQUIRE)
+                    dbg1("[{}] request sent".format(rank))
+                    self.request_events[output_name].wait()
+                    dbg1("[{}] get_communication returning".format(rank))
+                    return self.targets[output_name]
+                else:
+                    return []
 
     def create_communication_for_output(self, output_name: str, target_ranks_list: Dict[Tuple, List]):
         dbg1("[{}] creating communication for output: {} targets: {}".format(rank, output_name, target_ranks_list))
@@ -515,14 +537,17 @@ class MPIIncWrapper(MultithreadedWrapper):
                 self.brothers.remove(source)
                 dbg2("[{}] remaining brothers {}".format(rank, self.brothers))
 
+            dbg2("[{}] all brothers shutted down".format(rank))
             for output in self.pe.outputconnections:
                 #if output not in self.targets:
                 #    self.create_communication_for_output(output)
-                targets = self.get_communication(output)
+                targets = self.get_communication(output, existing=True)
+                dbg3("[{}] output {} targets {}".format(rank, output, targets))
                 for (inputName, communication) in targets:
                     for i in communication.destinations:
                         # self.pe.log('Terminating consumer %s' % i)
                         self.data_comm.isend(None, tag=STATUS_TERMINATED, dest=i)
+                        dbg1("[{}] terminate propagated to {}".format(rank, i))
         else:
             dbg1("[{}] waiting for data to be received by all targets {}".format(rank, self.pending_messages))
             MPI.Request.Waitall(list(self.pending_messages.values()))
