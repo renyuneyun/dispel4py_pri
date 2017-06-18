@@ -802,6 +802,7 @@ def main():   # pragma: no cover
         # it is a proper module name - fingers crossed...
         target = args.target
     try:
+        import_module(target)
         parse_args = getattr(import_module(target), 'parse_args')
         args = parse_args(remaining, args)
     except SystemExit:

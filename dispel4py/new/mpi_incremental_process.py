@@ -48,14 +48,14 @@ For example::
     TestOneInOneOut5 (rank 2): Processed 5 iterations.
 '''
 
-from threading import Thread, Lock, Event
+from threading import Thread, Lock, RLock, Event
 from concurrent.futures import ThreadPoolExecutor
 import time
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
+rank = -1
+size = 0
 
 from dispel4py.new.processor\
     import GenericWrapper, simpleLogger, STATUS_TERMINATED, STATUS_ACTIVE
@@ -72,7 +72,7 @@ from dispel4py.new.processor import IOMapping, Partition
 from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
 from dispel4py.core import GenericPE, GROUPING
 
-DEBUG=1
+DEBUG=2
 def debug_fn(level:int):
     def fn(msg: str):
         if DEBUG >= level:
@@ -104,6 +104,8 @@ def parse_args(args, namespace):
         description='Submit a dispel4py graph to MPI processes.')
     parser.add_argument('-s', '--simple', help='force simple processing',
                         action='store_true')
+    parser.add_argument('--spawned', help='spawed by framework (not for use manually)',
+                        action='store_true')
     result = parser.parse_args(args, namespace)
     return result
 
@@ -114,8 +116,8 @@ TAG_TARGET = 52
 TAG_BROTHER = 62
 TAG_INPUT_MAPPING = 60
 TAG_OUTPUT_MAPPING = 61
-TAG_DATA = 0
 TAG_FINALIZE = 100
+TAG_SPAWN_NEW_NODES = 97
 
 RANK_COORDINATOR=0
 
@@ -123,7 +125,9 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
     task_counter = 0
     pe_locks = {node.getContainedObject(): Lock() for node in workflow.graph.nodes()}
 
+    comm_lock = Lock()
     direction_comm = comm.Dup()
+    data_comm = comm.Dup()
     brother_comm = comm.Dup()
 
     def getWorkflowProperty(workflow: WorkflowGraph) -> Tuple[List[GenericPE], int]:
@@ -171,7 +175,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
                     if len(assignables) == prcs:
                         return assignables
             dbg0("no enough assignable processes [expected:{} needed:{} free:{}]".format(numproc, prcs, len(assignables)))
-            raise Exception("shouldn't run out of nodes")
+            raise NoEnoughNodesException("shouldn't run out of nodes")
         def assign(self, index: int, pe: GenericPE):
             self.task_list[index] = pe
             dbg2("[TaskList] [assign] {}:{} -> {}".format(index, pe, self.task_list))
@@ -201,10 +205,41 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         def remove(self, index: int):
             self.task_list[index] = None
             dbg2("TaskList after removing: {}".format(self.task_list))
+        def extend(self, size: int):
+            self.task_list += [None] * size
 
     def assign_node(pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
+        nonlocal direction_comm
+        global size
         dbg2("[assign_node]")
-        target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source, repeatable=pe.repeatable) #Needs list lock
+        found_enough_nodes = False
+        while not found_enough_nodes:
+            try:
+                target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source, repeatable=pe.repeatable) #Needs list lock
+                found_enough_nodes = True
+            except NoEnoughNodesException:
+                dbg1("[coordinator] NoEnoughNodesException")
+                num_to_spawn = 1
+                for i in range(1, size):
+                    direction_comm.send(None, i, tag=TAG_SPAWN_NEW_NODES)
+                dbg1("[coordinator] spawning new nodes {}/{}".format(rank, size))
+                inter_comm = direction_comm.Spawn(sys.argv[0], args=sys.argv[1:] + ['--spawned'], maxprocs=num_to_spawn, root=RANK_COORDINATOR)
+                dbg1('[coordinator] new nodes spawned')
+                dbg1('[coordinator] inter_comm remote_size {} self_rank {}/{}'.format(inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
+                new_direction_comm = inter_comm.Merge(high=False)
+                dbg1('[coordinator] inter_comm merged')
+                with comm_lock:
+                    direction_comm = new_direction_comm
+                    dbg1('[coordinator] duping to data_comm')
+                    data_comm = direction_comm.Dup()
+                    dbg1('[coordinator] duping to brother_comm')
+                    brother_comm = direction_comm.Dup()
+                    dbg1('[coordinator] extending')
+                    task_list.extend(10)
+                    dbg1('[coordinator] extended')
+                    size = direction_comm.Get_size()
+                    dbg1('[coordinator] new size"{}'.format(size))
+                dbg1("[coordinator] new nodes spawned: expected {} now total {}".format(num, size))
         dbg3("[assign_node] target_ranks:{}".format(target_ranks))
         for target_rank in target_ranks:
             dbg1("[assign_node] assigning:{}".format(target_rank))
@@ -292,12 +327,28 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
 
 
 def executor(workflow, inputs, args):
-    dbg0("[executor {}]".format(rank))
+    global rank, size
+    dbg0("[executor {}] is {}spawned".format(rank, '' if args.spawned else 'not '))
     status = MPI.Status()
     id_to_pe = {pe.id: pe for pe in (wfNode.getContainedObject() for wfNode in workflow.graph.nodes())}
 
-    direction_comm = comm.Dup()
-    brother_comm = comm.Dup()
+    if not args.spawned:
+        direction_comm = comm.Dup()
+        data_comm = comm.Dup()
+        brother_comm = comm.Dup()
+    else:
+        inter_comm = MPI.Comm.Get_parent()
+        dbg1('[{}] (spawned node) inter_comm {}'.format(rank, inter_comm))
+        dbg1('[{}] (spawned node) inter_comm remote_size {} self_rank {}/{}'.format(rank, inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
+        new_direction_comm = inter_comm.Merge(high=True)
+        dbg1('[{}] (spawned node) inter_comm merged'.format(rank))
+        rank = new_direction_comm.Get_rank()
+        size = new_direction_comm.Get_size()
+        direction_comm = new_direction_comm
+        dbg1('[{}] (spawned node) duping to data_comm'.format(rank))
+        data_comm = direction_comm.Dup()
+        dbg1('[{}] (spawned node) duping to brother_comm'.format(rank))
+        brother_comm = direction_comm.Dup()
 
     while True:
         dbg0("[executor {}] waiting for communication from coordinator".format(rank))
@@ -313,17 +364,35 @@ def executor(workflow, inputs, args):
             dbg4("[executor {}] going to get_inputs".format(rank))
             provided_inputs = processor.get_inputs(pe, inputs)
             dbg4("[executor {}] finished get_inputs: {}".format(rank, provided_inputs))
-            wrapper = MPIIncWrapper(workflow, pe, brothers=brothers, provided_inputs=provided_inputs, direction_comm=direction_comm, data_comm=comm, brother_comm=brother_comm)
+            wrapper = MPIIncWrapper(workflow, pe, brothers=brothers, provided_inputs=provided_inputs, direction_comm=direction_comm, data_comm=data_comm, brother_comm=brother_comm)
             dbg0("[executor {}] finished creating wrapper - executing".format(rank))
             wrapper.process()
+            direction_comm = wrapper.direction_comm
+            data_comm = wrapper.data_comm
+            brother_comm = wrapper.brother_comm
         elif tag == TAG_FINALIZE:
             break
+        elif tag == TAG_SPAWN_NEW_NODES:
+            dbg2("[executor {}] spawning new nodes {}/{}".format(rank, rank, size))
+            inter_comm = direction_comm.Spawn('', root=RANK_COORDINATOR)
+            dbg2("[executor {}] new nodes spawned".format(rank))
+            dbg1('[executor {}] inter_comm remote_size {} self_rank {}/{}'.format(rank, inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
+            new_direction_comm = inter_comm.Merge(high=False)
+            dbg2("[executor {}] inter_comm merged".format(rank))
+            direction_comm = new_direction_comm
+            dbg2("[executor {}] duping to data_comm".format(rank))
+            data_comm = direction_comm.Dup()
+            dbg2("[executor {}] duping to brother_comm".format(rank))
+            brother_comm = direction_comm.Dup()
     dbg0("[executor {}] finishing".format(rank))
 
 def process(workflow, inputs, args):
+    global rank, size
+    rank = comm.Get_rank()
+    size = comm.Get_size()
     if rank == 0:
         print([(edge[0].getContainedObject().id,edge[1].getContainedObject().id) for edge in workflow.graph.edges()])
-    if rank == 0:
+    if not args.spawned and rank == 0:
         coordinator(workflow, inputs, args)
     else:
         executor(workflow, inputs, args)
@@ -367,9 +436,10 @@ class MPIIncWrapper(MultithreadedWrapper):
         self.brothers = brothers
         self.rep = brothers[0]
         self.provided_inputs = provided_inputs
-        self.direction_comm = direction_comm
-        self.data_comm = data_comm
-        self.brother_comm = brother_comm
+        self.comm_lock = RLock()
+        self._direction_comm = direction_comm
+        self._data_comm = data_comm
+        self._brother_comm = brother_comm
         self.terminated = 0
         self._num_sources = len(list(self.workflow.inputEdges(pe)))
         self.status = STATUS_ACTIVE
@@ -379,6 +449,21 @@ class MPIIncWrapper(MultithreadedWrapper):
         self.targets = {}
         self.pending_messages = {}
         self.fd = open("outputs/mpi_inc/{}".format(pe.id), 'a')
+
+    @property
+    def direction_comm(self):
+        with self.comm_lock:
+            return self._direction_comm
+
+    @property
+    def data_comm(self):
+        with self.comm_lock:
+            return self._data_comm
+
+    @property
+    def brother_comm(self):
+        with self.comm_lock:
+            return self._brother_comm
 
     def is_rep(self):
         return self.rep == rank
@@ -396,6 +481,19 @@ class MPIIncWrapper(MultithreadedWrapper):
             if tag == TAG_TARGET:
                 output_name, all_indicies = msg
                 self.create_communication_for_output(output_name, all_indicies)
+            elif tag == TAG_SPAWN_NEW_NODES:
+                with self.comm_lock:
+                    dbg2("[{}] spawning new nodes {}/{}".format(rank, rank, size))
+                    inter_comm = self.direction_comm.Spawn('', root=RANK_COORDINATOR)
+                    dbg2("[{}] new nodes spawned".format(rank))
+                    dbg2('[{}] inter_comm remote_size {} self_rank {}/{}'.format(rank, inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
+                    new_direction_comm = inter_comm.Merge(high=False)
+                    dbg2("[{}] inter_comm merged".format(rank))
+                    self._direction_comm = new_direction_comm
+                    dbg2("[{}] duping to data_comm".format(rank))
+                    self._data_comm = self.direction_comm.Dup()
+                    dbg2("[{}] duping to brother_comm".format(rank))
+                    self._brother_comm = self.direction_comm.Dup()
 
     def _listen_data(self):
         inputs, status = self._read()
@@ -561,6 +659,10 @@ class MPIIncWrapper(MultithreadedWrapper):
         self.direction_comm.send(None, RANK_COORDINATOR, tag=STATUS_TERMINATED)
         dbg1("[{}] terminate sent to coordinator".format(rank))
         dbg1("[{}] _terminate returning".format(rank))
+
+
+class NoEnoughNodesException(Exception):
+    pass
 
 
 def main():
