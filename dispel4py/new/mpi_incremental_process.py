@@ -72,7 +72,7 @@ from dispel4py.new.processor import IOMapping, Partition
 from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
 from dispel4py.core import GenericPE, GROUPING
 
-DEBUG=2
+DEBUG=-1
 def debug_fn(level:int):
     def fn(msg: str):
         if DEBUG >= level:
@@ -109,6 +109,7 @@ def parse_args(args, namespace):
 
 TAG_DEPLOY = 50
 TAG_REQUIRE = 51
+TAG_QUERY = 54
 TAG_WAIT = 53
 TAG_TARGET = 52
 TAG_BROTHER = 62
@@ -124,6 +125,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
     pe_locks = {node.getContainedObject(): Lock() for node in workflow.graph.nodes()}
 
     direction_comm = comm.Dup()
+    data_comm = comm.Dup()
     brother_comm = comm.Dup()
 
     def getWorkflowProperty(workflow: WorkflowGraph) -> Tuple[List[GenericPE], int]:
@@ -217,7 +219,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         dbg2("[assign_node] finishing")
         return target_ranks
 
-    def onRequire(output_name: str, source_rank: int, workflow: WorkflowGraph, task_list: TaskList):
+    def onRequire(output_name: str, source_rank: int, workflow: WorkflowGraph, task_list: TaskList, deploy=True):
         nonlocal task_counter
         dbg1("[coordinator] onRequire")
         source_pe = task_list.get_node(source_rank) # Exists and won't disappear, so don't need lock
@@ -231,11 +233,12 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
                         dbg4("[coordinator] looking up if exists")
                         indices = task_list.lookup(required_pe) # needs global PE lock to know if another source is requiring the same pe
                         dbg2("[coordinator] lookup finished: {}".format(indices))
-                        if len(indices) == 0:
+                        if len(indices) == 0 and deploy:
                             dbg2("[coordinator] no existing")
                             indices = assign_node(workflow, required_pe, task_list, is_source=False) #Holds global PE lock
                             dbg3("[coordinator] new nodes assigned: {}".format(indices))
-                    all_indices[(input_name, required_pe.id)] = indices
+                    if indices:
+                        all_indices[(input_name, required_pe.id)] = indices
         task_counter -= 1
         dbg1("[coordinator] sending targets to {}".format(source_rank))
         direction_comm.send((output_name, all_indices), source_rank, tag=TAG_TARGET)
@@ -261,6 +264,8 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             task_counter += 1
             Thread(target=onRequire, args=(msg, source_rank, workflow, task_list)).start()
             #onRequire(msg, source_rank, workflow, task_list)
+        elif tag == TAG_QUERY:
+            Thread(target=onRequire, args=(msg, source_rank, workflow, task_list, False)).start()
         elif tag == STATUS_TERMINATED: #Happens only when node `source_rank` has all destinations (i.e. no onRequire will be called for this node)
             dbg0("[coordinator] onFinish")
             task_list.remove(source_rank)
@@ -275,6 +280,9 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             raise Exception("unexpected tag")
     dbg0("coordinator exit [max_used_nodes: {} (coordinator excluded)]".format(task_list.max_used_nodes))
 
+    direction_comm.Free()
+    data_comm.Free()
+    brother_comm.Free()
 
 
 def executor(workflow, inputs, args):
@@ -283,6 +291,7 @@ def executor(workflow, inputs, args):
     id_to_pe = {pe.id: pe for pe in (wfNode.getContainedObject() for wfNode in workflow.graph.nodes())}
 
     direction_comm = comm.Dup()
+    data_comm = comm.Dup()
     brother_comm = comm.Dup()
 
     while True:
@@ -299,12 +308,18 @@ def executor(workflow, inputs, args):
             dbg4("[executor {}] going to get_inputs".format(rank))
             provided_inputs = processor.get_inputs(pe, inputs)
             dbg4("[executor {}] finished get_inputs: {}".format(rank, provided_inputs))
-            wrapper = MPIIncWrapper(workflow, pe, brothers=brothers, provided_inputs=provided_inputs, direction_comm=direction_comm, data_comm=comm, brother_comm=brother_comm)
+            wrapper = MPIIncWrapper(workflow, pe, brothers=brothers, provided_inputs=provided_inputs, direction_comm=direction_comm, data_comm=data_comm, brother_comm=brother_comm)
             dbg0("[executor {}] finished creating wrapper - executing".format(rank))
             wrapper.process()
         elif tag == TAG_FINALIZE:
             break
+        else:
+            raise Exception("Unknown/Illegal tag")
     dbg0("[executor {}] finishing".format(rank))
+
+    direction_comm.Free()
+    data_comm.Free()
+    brother_comm.Free()
 
 def process(workflow, inputs, args):
     if rank == 0:
@@ -313,6 +328,7 @@ def process(workflow, inputs, args):
         coordinator(workflow, inputs, args)
     else:
         executor(workflow, inputs, args)
+    MPI.Finalize()
 
 
 class MultithreadedWrapper(GenericWrapper):
@@ -403,14 +419,14 @@ class MPIIncWrapper(MultithreadedWrapper):
         thread2.join()
         dbg1("[{}] listen ends".format(rank))
 
-    def get_communication(self, output_name: str):
+    def get_communication(self, output_name: str, deploy=True):
         with self.request_locks[output_name]:
             try:
                 return self.targets[output_name]
             except KeyError:
                 dbg1("[{}] target not existing".format(rank))
                 dbg1("[{}] request_target: {}".format(rank, output_name))
-                self.direction_comm.send(output_name, RANK_COORDINATOR, tag=TAG_REQUIRE)
+                self.direction_comm.send(output_name, RANK_COORDINATOR, tag=TAG_REQUIRE if deploy else TAG_QUERY)
                 dbg1("[{}] request sent".format(rank))
                 self.request_events[output_name].wait()
                 return self.targets[output_name]
@@ -448,11 +464,12 @@ class MPIIncWrapper(MultithreadedWrapper):
         if result is not None:
             dbg1("[{}] _read returning (with provided_inputs): {}".format(rank, result))
             return result
+        dbg1("[{}] _read no provided_inputs".format(rank))
 
         status = MPI.Status()
         msg = self.data_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
         source, tag = status.Get_source(), status.Get_tag()
-        dbg2("[{}] data message got: {} with tag {} from {}".format(rank, msg, tag, source))
+        dbg1("[{}] data message got: {} with tag {} from {}".format(rank, msg, tag, source))
         while tag == STATUS_TERMINATED:
             self.terminated += 1
             if self.terminated >= self._num_sources:
@@ -461,7 +478,7 @@ class MPIIncWrapper(MultithreadedWrapper):
                             tag=MPI.ANY_TAG,
                             status=status)
             source, tag = status.Get_source(), status.Get_tag()
-            dbg2("[{}] data message got: {} with tag {} from {}".format(rank, msg, tag, source))
+            dbg1("[{}] data message got: {} with tag {} from {}".format(rank, msg, tag, source))
         dbg1("[{}] _read returning: {} (tag:{})".format(rank, msg, tag))
         return msg, tag
 
@@ -487,8 +504,6 @@ class MPIIncWrapper(MultithreadedWrapper):
                     dbg1("[{}] sending {} to {}".format(rank, output, i))
                     request = self.data_comm.issend(output, tag=STATUS_ACTIVE, dest=i)
                     req_key = (name, inputName, i)
-                    #if req_key in self.pending_messages:
-                    #    self.pending_messages[req_key].Free()
                     self.pending_messages[req_key] = request
                     dbg1("[{}] data sent".format(rank))
                 except:
@@ -518,7 +533,7 @@ class MPIIncWrapper(MultithreadedWrapper):
             for output in self.pe.outputconnections:
                 #if output not in self.targets:
                 #    self.create_communication_for_output(output)
-                targets = self.get_communication(output)
+                targets = self.get_communication(output, False)
                 for (inputName, communication) in targets:
                     for i in communication.destinations:
                         # self.pe.log('Terminating consumer %s' % i)
@@ -527,8 +542,6 @@ class MPIIncWrapper(MultithreadedWrapper):
             dbg1("[{}] waiting for data to be received by all targets {}".format(rank, self.pending_messages))
             MPI.Request.Waitall(list(self.pending_messages.values()))
             dbg1("[{}] data received by all targets".format(rank))
-            #for req in self.pending_messages.values():
-            #    req.Free()
             dbg1("[{}] sending terminate to rep".format(rank))
             self.brother_comm.send(None, self.rep, tag=STATUS_TERMINATED)
             dbg1("[{}] terminate sent to rep".format(rank))
