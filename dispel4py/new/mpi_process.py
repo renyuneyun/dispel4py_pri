@@ -63,6 +63,8 @@ import sys
 import types
 import traceback
 
+import time
+
 
 def mpi_excepthook(type, value, trace):
     '''
@@ -87,6 +89,8 @@ def parse_args(args, namespace):
 
 
 def process(workflow, inputs, args):
+    import time
+    t1 = time.time()
     processes = {}
     inputmappings = {}
     outputmappings = {}
@@ -147,6 +151,11 @@ def process(workflow, inputs, args):
             wrapper.targets = outputmappings[rank]
             wrapper.sources = inputmappings[rank]
             wrapper.process()
+
+    t2 = time.time()
+    if rank == 0:
+        with open('measure/mpi', 'a') as fd:
+            fd.write("{}\n".format(t2-t1))
 
 
 class MPIWrapper(GenericWrapper):
