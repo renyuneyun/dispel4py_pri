@@ -67,10 +67,7 @@ import types
 import traceback
 
 
-from typing import Dict, Iterable, List, Tuple, Union
-from dispel4py.new.processor import IOMapping, Partition
-from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
-from dispel4py.core import GenericPE, GROUPING
+from dispel4py.core import GROUPING
 
 def mpi_excepthook(type, value, trace):
     '''
@@ -108,7 +105,7 @@ TAG_FINALIZE = 100
 
 RANK_COORDINATOR=0
 
-def coordinator(workflow: WorkflowGraph, inputs, args):
+def coordinator(workflow, inputs, args):
     task_counter = 0
     pe_locks = {node.getContainedObject(): Lock() for node in workflow.graph.nodes()}
 
@@ -116,8 +113,8 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
     data_comm = comm.Dup()
     brother_comm = comm.Dup()
 
-    def getWorkflowProperty(workflow: WorkflowGraph) -> Tuple[List[GenericPE], int]:
-        def initial_nodes(workflow: WorkflowGraph) -> List[GenericPE]:
+    def getWorkflowProperty(workflow):
+        def initial_nodes(workflow):
             graph = workflow.graph
             all_initial_nodes = []
             for node in graph.nodes():
@@ -136,7 +133,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         return all_initial_nodes, totalProcesses
 
     class TaskList:
-        def __init__(self, size: int, numSources: int=-1, totalProcesses: int=-1):
+        def __init__(self, size, numSources=-1, totalProcesses=-1):
             self.task_list = [None] * size
             self.task_list[0] = 0 # special mark for coordinator
             self.max_used_nodes = 0
@@ -145,7 +142,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
         @property
         def size(self):
             return len(self.task_list) - 1
-        def find_assignable(self, numproc=1, is_source=False) -> List[int]:
+        def find_assignable(self, numproc=1, is_source=False):
             assignables = []
             if is_source:
                 prcs = 1
@@ -161,34 +158,34 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
                     if len(assignables) == prcs:
                         return assignables
             raise Exception("shouldn't run out of nodes")
-        def assign(self, index: int, pe: GenericPE):
+        def assign(self, index, pe):
             self.task_list[index] = pe
             self.max_used_nodes = max(self.max_used_nodes, len(self.working_nodes()))
-        def working_nodes(self) -> List[int]: # May be replace with "num_working_nodes" because nowhere uses the actual nodes
+        def working_nodes(self): # May be replace with "num_working_nodes" because nowhere uses the actual nodes
             working = []
             for i, pe in enumerate(self.task_list):
                 if i == 0: continue
                 if pe != None:
                     working.append(i)
             return working
-        def has_working_nodes(self) -> bool:
+        def has_working_nodes(self):
             for pe in self.task_list[1:]:
                 if pe != None:
                     return True
             return False
-        def lookup(self, target_pe: GenericPE) -> List[int]:
+        def lookup(self, target_pe):
             matches = []
             for i, pe in enumerate(self.task_list):
                 if i == 0: continue
                 if pe == target_pe:
                     matches.append(i)
             return matches
-        def get_node(self, index: int) -> GenericPE:
+        def get_node(self, index):
             return self.task_list[index]
-        def remove(self, index: int):
+        def remove(self, index):
             self.task_list[index] = None
 
-    def assign_node(workflow: WorkflowGraph, pe: GenericPE, task_list: TaskList, is_source=True) -> List[int]:
+    def assign_node(workflow, pe, task_list, is_source=True):
         target_ranks = task_list.find_assignable(pe.numprocesses, is_source=is_source) #Needs list lock
         for target_rank in target_ranks:
             direction_comm.send(pe.id, target_rank, tag=TAG_DEPLOY) #Is pe.id reliable for different processes (original mpi version assumes this)?
@@ -196,7 +193,7 @@ def coordinator(workflow: WorkflowGraph, inputs, args):
             task_list.assign(target_rank, pe) #Needs list lock
         return target_ranks
 
-    def onRequire(output_name: str, source_rank: int, workflow: WorkflowGraph, task_list: TaskList, deploy=True):
+    def onRequire(output_name, source_rank, workflow, task_list, deploy=True):
         nonlocal task_counter
         source_pe = task_list.get_node(source_rank) # Exists and won't disappear, so don't need lock
         all_indices = {}
@@ -313,7 +310,7 @@ class MultithreadedWrapper(GenericWrapper):
 
 class MPIIncWrapper(MultithreadedWrapper):
 
-    def __init__(self, workflow: WorkflowGraph, pe: GenericPE, brothers=[], provided_inputs=None, direction_comm=comm, data_comm=comm, brother_comm=comm):
+    def __init__(self, workflow, pe, brothers=[], provided_inputs=None, direction_comm=comm, data_comm=comm, brother_comm=comm):
         super(MPIIncWrapper, self).__init__(pe)
         self.workflow = workflow
         self.pe.log = types.MethodType(simpleLogger, pe)
@@ -367,7 +364,7 @@ class MPIIncWrapper(MultithreadedWrapper):
         thread1.join()
         thread2.join()
 
-    def get_communication(self, output_name: str, deploy=True):
+    def get_communication(self, output_name, deploy=True):
         with self.request_locks[output_name]:
             try:
                 return self.targets[output_name]
@@ -376,7 +373,7 @@ class MPIIncWrapper(MultithreadedWrapper):
                 self.request_events[output_name].wait()
                 return self.targets[output_name]
 
-    def create_communication_for_output(self, output_name: str, target_ranks_list: Dict[Tuple, List]):
+    def create_communication_for_output(self, output_name, target_ranks_list):
         if target_ranks_list:
             for target_pe, allconnections in self.workflow.outputConnections(self.pe):
                 for (source_output, dest_input) in allconnections:
