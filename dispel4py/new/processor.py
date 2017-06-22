@@ -252,12 +252,12 @@ def _assign_processes(workflow, size):
             node_counter = node_counter + prcs
     return success, sources, processes
 
-def _getCommunication(*args, groupingtype=None):
+def _getCommunication(*args):
     '''
     def _getCommunication(rank, source_processes,
                           dest, dest_input, dest_processes)
     def _getCommunication(source_index, dest_input, dest_processes,
-                          groupingtype=None)
+                          groupingtype)
     '''
     try:
         rank, source_processes, dest, dest_input, dest_processes = args
@@ -280,6 +280,7 @@ def _getCommunication(*args, groupingtype=None):
     except ValueError:
         try:
             source_index, dest_input, dest_processes = args
+            groupingtype = None
         except ValueError:
             source_index, dest_input, dest_processes, groupingtype = args
         if not groupingtype:

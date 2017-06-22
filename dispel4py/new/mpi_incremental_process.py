@@ -105,8 +105,10 @@ TAG_FINALIZE = 100
 
 RANK_COORDINATOR=0
 
+task_counter = 0
+
 def coordinator(workflow, inputs, args):
-    task_counter = 0
+    global task_counter
     pe_locks = {node.getContainedObject(): Lock() for node in workflow.graph.nodes()}
 
     direction_comm = comm.Dup()
@@ -194,7 +196,7 @@ def coordinator(workflow, inputs, args):
         return target_ranks
 
     def onRequire(output_name, source_rank, workflow, task_list, deploy=True):
-        nonlocal task_counter
+        global task_counter
         source_pe = task_list.get_node(source_rank) # Exists and won't disappear, so don't need lock
         all_indices = {}
         for (required_pe, allconnections) in workflow.outputConnections(source_pe):
@@ -383,7 +385,7 @@ class MPIIncWrapper(MultithreadedWrapper):
                             groupingtype = target_pe.inputconnections[dest_input][GROUPING]
                         except KeyError:
                             groupingtype = None
-                        communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype=groupingtype)
+                        communication = processor._getCommunication(self.brothers.index(rank), dest_input, target_ranks, groupingtype)
                         if output_name not in self.targets:
                             self.targets[output_name] = []
                         self.targets[output_name].append((dest_input, communication))
