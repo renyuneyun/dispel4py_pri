@@ -152,22 +152,22 @@ class RepeatablePE(GenericPE):
         self._circuit = {}
 
     @property
-    def repeatable(self) -> bool:
+    def repeatable(self):
         return True
 
-    def _add_circuit(self, output_name: str, input_name: str) -> None:
+    def _add_circuit(self, output_name, input_name):
         try:
             self._circuit[output_name].append(input_name)
         except KeyError:
             self._circuit[output_name] = [input_name]
 
-    def get_circuit(self, output_name: str) -> list:
+    def get_circuit(self, output_name):
         try:
             return list(self._circuit[output_name])
         except KeyError:
             return []
 
-    def get_circuit_outputs(self) -> list:
+    def get_circuit_outputs(self):
         return list(self._circuit.keys())
 
 
