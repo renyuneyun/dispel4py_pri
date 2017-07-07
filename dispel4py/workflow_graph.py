@@ -224,12 +224,23 @@ class WorkflowGraph(object):
                 yield edge
 
     def outputConnections(self, pe, emit_pe=True):
-        for edge in self.outputEdges(pe):
+        if not pe.repeatable:
+            for edge in self.outputEdges(pe):
+                if emit_pe:
+                    first = edge[2]['DIRECTION'][1]
+                else:
+                    first = edge[1]
+                yield first, edge[2]['ALL_CONNECTIONS']
+        else:
             if emit_pe:
-                first = edge[2]['DIRECTION'][1]
+                first = pe
             else:
-                first = edge[1]
-            yield first, edge[2]['ALL_CONNECTIONS']
+                first = self.objToNode[pe]
+            allconnections = []
+            for output_name in pe.get_circuit_outputs():
+                for input_name in pe.get_circuit(output_name):
+                    allconnections.append((output_name, input_name))
+            yield first, allconnections
 
     def inputEdges(self, pe):
         node = self.objToNode[pe]

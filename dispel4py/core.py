@@ -120,6 +120,20 @@ Example implementation::
         self.name = self.__class__.__name__
         self.id = self.name + str(uuid.uuid4())
 
+    @property
+    def FIFO(self):
+        '''
+        Indicates if this PE should process inputs in FIFO order
+        '''
+        return False
+
+    @property
+    def repeatable(self):
+        '''
+        Indicates if this PE can repeat itself to dynamically grow the graph
+        '''
+        return False
+
     def _add_input(self, name, grouping=None, tuple_type=None):
         '''
         Declares an input for this PE.

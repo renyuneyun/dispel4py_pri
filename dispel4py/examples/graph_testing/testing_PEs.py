@@ -18,7 +18,7 @@ Example PEs for test workflows, implementing various patterns.
 '''
 
 from dispel4py.core import GenericPE
-from dispel4py.base import IterativePE, ProducerPE, ConsumerPE
+from dispel4py.base import IterativePE, ProducerPE, ConsumerPE, RepeatablePE
 import random
 import time
 from collections import defaultdict
@@ -281,4 +281,41 @@ class FakeRandomWordProducer(GenericPE):
         return outputs
 
 RandomWordProducer = FakeRandomWordProducer
+
+class RepeatablePrimeSieve(RepeatablePE):
+    '''
+    This PE performs as a prime sieve.
+    '''
+
+    INPUT_NUMBER_LINE = 'input'
+    OUTPUT_NUMBER_LINE = 'output'
+    OUTPUT_NUMBER = 'number'
+
+    def __init__(self):
+        super(RepeatablePrimeSieve, self).__init__()
+        self.number = None
+        self._add_input(RepeatablePrimeSieve.INPUT_NUMBER_LINE)
+        self._add_output(RepeatablePrimeSieve.OUTPUT_NUMBER_LINE)
+        self._add_output(RepeatablePrimeSieve.OUTPUT_NUMBER)
+        self._add_circuit(RepeatablePrimeSieve.OUTPUT_NUMBER_LINE,
+                                 RepeatablePrimeSieve.INPUT_NUMBER_LINE)
+
+    @property
+    def FIFO(self):
+        return True
+
+    def _preprocess(self):
+        self.number = None
+
+    def process(self, inputs):
+        number = inputs[RepeatablePrimeSieve.INPUT_NUMBER_LINE]
+        if self.number is None:
+            self.number = number
+            outputs = {RepeatablePrimeSieve.OUTPUT_NUMBER: number}
+        else:
+            if number % self.number != 0:
+                outputs = {RepeatablePrimeSieve.OUTPUT_NUMBER_LINE: number}
+            else:
+                outputs = None
+        return outputs
 
