@@ -191,7 +191,7 @@ class Coordinator(object):
                         if self.task_counter == 0 and not self.task_list.working_nodes(): #Because we know MPI guarentees FIFO for each pair's communication, we can safely say there is no request on-the-fly #We need a counter to know whether there are communications being processing by onRequire (which will cause later nodes' creation [and also later nodes' TERMINATED's sending] but currently no nodes are working
                             dbg1("[coordinator] sending finalize communication to all nodes")
                             for i in range(1, self.size):
-                                self.direction_comm[-1].isend(None, i, tag=TAG_FINALIZE)
+                                self.direction_comm[-1].send(None, i, tag=TAG_FINALIZE)
                             dbg1("[coordinator] finalize communication sent to all {} nodes".format(self.size))
                             finalized = True
                             break
@@ -445,6 +445,7 @@ class Executor(object):
                     dbg0("[executor {}] finished creating wrapper - executing".format(rank))
                     wrapper.process()
                     self.old_direction_comm = self.direction_comm
+                    read_old = True
                     self.direction_comm = wrapper._direction_comm[-1]
                     self.data_comm = wrapper._data_comm[-1]
                     self.brother_comm = wrapper._brother_comm[-1]
@@ -744,7 +745,6 @@ class MPIIncWrapper(MultithreadedWrapper):
                                 self._data_comm_for_target[i] = data_comm
                     dbg0("[{}] data_comm: {}".format(self.rank, data_comm))
                     request = data_comm.issend(output, tag=STATUS_ACTIVE, dest=i)
-                    req_key = (name, inputName, i)
                     self.pending_messages.append(request)
                     dbg1("[{}] data sent".format(rank))
                 except:
@@ -782,7 +782,7 @@ class MPIIncWrapper(MultithreadedWrapper):
                     for (inputName, communication) in targets:
                         for i in communication.destinations:
                             # self.pe.log('Terminating consumer %s' % i)
-                            data_comm.isend(None, tag=STATUS_TERMINATED, dest=i)
+                            data_comm.send(None, tag=STATUS_TERMINATED, dest=i)
                             dbg1("[{}] terminate propagated to {}".format(rank, i))
         else:
             dbg1("[{}] waiting for data to be received by all targets {}".format(rank, self.pending_messages))
