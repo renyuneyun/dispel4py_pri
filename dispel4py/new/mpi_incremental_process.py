@@ -73,7 +73,7 @@ from dispel4py.new.processor import IOMapping, Partition
 from dispel4py.workflow_graph import WorkflowNode, WorkflowGraph
 from dispel4py.core import GenericPE, GROUPING
 
-DEBUG=2
+DEBUG=4
 def debug_fn(level:int):
     def fn(msg: str):
         if DEBUG >= level:
@@ -219,8 +219,8 @@ class Coordinator(object):
                         else:
                             self.direction_comm[-1].send(None, i, tag=TAG_SPAWN_NEW_NODES)
                     dbg1("[coordinator] spawning new nodes {}/{}".format(rank, self.size))
-                    inter_comm = self.direction_comm[-1].Spawn(sys.argv[0], args=sys.argv[1:] + ['--spawned'], maxprocs=num_to_spawn, root=RANK_COORDINATOR)
-                    #inter_comm = self.direction_comm[-1].Spawn("xterm", args=["-e"] + sys.argv + ['--spawned'], maxprocs=num_to_spawn, root=RANK_COORDINATOR)
+                    #inter_comm = self.direction_comm[-1].Spawn(sys.argv[0], args=sys.argv[1:] + ['--spawned'], maxprocs=num_to_spawn, root=RANK_COORDINATOR)
+                    inter_comm = self.direction_comm[-1].Spawn("xterm", args=["-e"] + sys.argv + ['--spawned'], maxprocs=num_to_spawn, root=RANK_COORDINATOR)
                     dbg1('[coordinator] new nodes spawned')
                     dbg1('[coordinator] inter_comm remote_size {} self_rank {}/{}'.format(inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
                     new_direction_comm = inter_comm.Merge(high=False)
@@ -471,6 +471,7 @@ def process(workflow, inputs, args):
         coordinator(workflow, inputs, args)
     else:
         executor(workflow, inputs, args)
+    input()
 
 
 class MultithreadedWrapper(GenericWrapper):
@@ -532,10 +533,16 @@ class MPIIncWrapper(MultithreadedWrapper):
         self.fd = open("outputs/mpi_inc/{}".format(pe.id), 'a')
 
     def _get_comm(self, comm, sep_lock, index):
+        dbg4("[{}] _get_comm".format(self.rank))
         self.comm_lock.acquire()
+        dbg4("[{}] _get_comm comm_lock locked".format(self.rank))
         with sep_lock:
+            dbg4("[{}] _get_comm sep_lock locked".format(self.rank))
             self.comm_lock.release()
+            dbg4("[{}] _get_comm comm_lock unlocked".format(self.rank))
+            dbg4("[{}] _get_comm yielding".format(self.rank))
             yield comm[index]
+            dbg4("[{}] _get_comm sep_lock unlocking".format(self.rank))
 
     @property
     @contextlib.contextmanager
@@ -557,9 +564,9 @@ class MPIIncWrapper(MultithreadedWrapper):
 
     @contextlib.contextmanager
     def get_data_comm(self, index=0):
-        for ret in self._get_comm(self._data_comm, self._data_lock, index):
-            yield ret
-        #return self._get_comm(self._data_comm, self._data_lock, index)
+        #for ret in self._get_comm(self._data_comm, self._data_lock, index):
+        #    yield ret
+        return self._get_comm(self._data_comm, self._data_lock, index)
 
     @property
     @contextlib.contextmanager
@@ -738,12 +745,19 @@ class MPIIncWrapper(MultithreadedWrapper):
                     dbg1("[{}] sending {} to {}".format(rank, output, i))
                     with self._data_lock:
                         try:
+                            dbg4("[{}] getting data_comm".format(self.rank))
                             data_comm = self._data_comm_for_target[i]  # Needs to confirm to use `i` or `name`
                         except KeyError:
+                            dbg4("[{}] no existing for node {}".format(self.rank, i))
                             with self.get_data_comm(-1) as i_data_comm:
+                                dbg4("[{}] using last data_comm {}".format(self.rank, i_data_comm))
                                 data_comm = i_data_comm
                                 self._data_comm_for_target[i] = data_comm
+                                dbg4("[{}] data_comm {} for node {} recorded".format(self.rank, i_data_comm, i))
+                        finally:
+                            dbg4("[{}] data_comm got".format(self.rank))
                     dbg0("[{}] data_comm: {}".format(self.rank, data_comm))
+                    dbg4("[{}] data_comm: {} {}/{}".format(self.rank, data_comm, data_comm.Get_rank(), data_comm.Get_size()))
                     request = data_comm.issend(output, tag=STATUS_ACTIVE, dest=i)
                     self.pending_messages.append(request)
                     dbg1("[{}] data sent".format(rank))
