@@ -383,10 +383,10 @@ def process(workflow, inputs, args):
     if rank == 0:
         print([(edge[0].getContainedObject().id,edge[1].getContainedObject().id) for edge in workflow.graph.edges()])
     if not args.spawned and rank == 0:
-        t1 = time.time()
+        t1 = MPI.Wtime()
         coordinator(workflow, inputs, args)
-        t2 = time.time()
-        with open('measure/mpi_inc', 'a') as fd:
+        t2 = MPI.Wtime()
+        with open('mpi_inc', 'a') as fd:
             fd.write("{}\n".format(t2-t1))
     else:
         executor(workflow, inputs, args)

@@ -89,8 +89,7 @@ def parse_args(args, namespace):
 
 
 def process(workflow, inputs, args):
-    import time
-    t1 = time.time()
+    t1 = MPI.Wtime()
     processes = {}
     inputmappings = {}
     outputmappings = {}
@@ -152,9 +151,9 @@ def process(workflow, inputs, args):
             wrapper.sources = inputmappings[rank]
             wrapper.process()
 
-    t2 = time.time()
     if rank == 0:
-        with open('measure/mpi', 'a') as fd:
+        t2 = MPI.Wtime()
+        with open('mpi', 'a') as fd:
             fd.write("{}\n".format(t2-t1))
 
 
