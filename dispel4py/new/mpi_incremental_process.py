@@ -50,7 +50,6 @@ For example::
 
 from threading import Thread, Lock, RLock, Event
 from concurrent.futures import ThreadPoolExecutor
-import time
 import contextlib
 from mpi4py import MPI
 
@@ -436,6 +435,7 @@ class MPIIncWrapper(MultithreadedWrapper):
         self._direction_comm = [direction_comm]  # Don't need to switch (but need ordered) because the initial one would satisfy the use
         self._direction_lock = RLock()
         self._data_comm_for_target = {}
+        self._comm_for_target_lock = Lock()
         self._data_comm = [data_comm]  # Need ordered and (choose to) use a dedicated one to send and loop all to read
         self._data_lock = RLock()
         self._brother_comm = [brother_comm]  # Same as direction_comm, don't need to switch (and need ordered)
@@ -476,9 +476,9 @@ class MPIIncWrapper(MultithreadedWrapper):
 
     @contextlib.contextmanager
     def get_data_comm(self, index=0):
-        for ret in self._get_comm(self._data_comm, self._data_lock, index):
-            yield ret
-        #return self._get_comm(self._data_comm, self._data_lock, index)
+        #for ret in self._get_comm(self._data_comm, self._data_lock, index):
+        #    yield ret
+        return self._get_comm(self._data_comm, self._data_lock, index)
 
     @property
     @contextlib.contextmanager
@@ -612,7 +612,7 @@ class MPIIncWrapper(MultithreadedWrapper):
             for i in dest:
                 try:
                     # self.pe.log('Sending %s to %s' % (output, i))
-                    with self._data_lock:
+                    with self._comm_for_target_lock:
                         try:
                             data_comm = self._data_comm_for_target[i]  # Needs to confirm to use `i` or `name`
                         except KeyError:
