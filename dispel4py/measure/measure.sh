@@ -10,6 +10,7 @@ mkdir -p "$measure_dir"
 overall_file="$measure_dir/overall"
 if [ ! -f "$overall_file" ]; then
 	echo platform number_of_iteration np max_number_of_sieves max_prime mpi_time mpi_inc_time
+	echo platform number_of_iteration np max_number_of_sieves max_prime mpi_time mpi_inc_time > "$overall_file"
 fi
 
 source ~/self/Edinburgh/venv/dissertation/bin/activate
@@ -61,7 +62,7 @@ length=${#all[@]}
 for ((i=0;i<$length;i++)) do
 	pair=${!all[i]}
 	for ((number_of_iteration=1;number_of_iteration<100;number_of_iteration+=10)); do
-		for ((i=0;i<8;i+=1)); do step $np $number_of_iteration $pair; done
+		for ((iter=0;iter<8;iter+=1)); do step $np $number_of_iteration $pair; done
 	done
 done
 

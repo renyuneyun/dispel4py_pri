@@ -10,6 +10,7 @@ mkdir -p "$measure_dir"
 overall_file="$measure_dir/overall_simple"
 if [ ! -f "$overall_file" ]; then
 	echo platform number_of_iteration np mpi_time mpi_inc_time
+	echo platform number_of_iteration np mpi_time mpi_inc_time > "$overall_file"
 fi
 
 source ~/self/Edinburgh/venv/dissertation/bin/activate
@@ -41,21 +42,11 @@ function step {
 	echo $platform $number_of_iteration $np $mpi_time $mpi_inc_time >> "$overall_file"
 }
 
-all=(
-4
-5
-6
-7
-8
-)
-
 echo Ready
 
-length=${#all[@]}
-for ((i=0;i<$length;i++)) do
-	np=${!all[i]}
+for ((np=4;np<=8;np++)) do
 	for ((number_of_iteration=1;number_of_iteration<100;number_of_iteration+=10)); do
-		for ((i=0;i<8;i+=1)); do step $np $number_of_iteration; done
+		for ((iter=0;iter<8;iter+=1)); do step $np $number_of_iteration; done
 	done
 done
 
