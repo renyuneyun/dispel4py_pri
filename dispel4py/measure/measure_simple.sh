@@ -29,9 +29,9 @@ function step {
 	echo Number of initial nodes: $np > configure &&
 	echo Number of iterations: $number_of_iteration >> configure &&
 
-	/usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.large_teecopy -i $number_of_iteration > /dev/null 2> time_mpi_inc &&
-	echo "=================" &&
 	/usr/bin/time -f %e mpiexec -np $np dispel4py mpi dispel4py.measure.graph.large_teecopy -i $number_of_iteration > /dev/null 2> time_mpi &&
+	echo "=================" &&
+	/usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.large_teecopy -i $number_of_iteration > /dev/null 2> time_mpi_inc &&
 
 	#mpi_inc_time=`cat mpi_inc | tr -d '\n'` &&
 	#mpi_time=`cat mpi | tr -d '\n'` &&
@@ -45,8 +45,8 @@ function step {
 echo Ready
 
 for ((np=4;np<=8;np++)) do
-	for ((number_of_iteration=1;number_of_iteration<100;number_of_iteration+=10)); do
-		for ((iter=0;iter<8;iter+=1)); do step $np $number_of_iteration; done
+	for ((number_of_iteration=1;number_of_iteration<1000;number_of_iteration+=10)); do
+		for ((iter=0;iter<5;iter+=1)); do step $np $number_of_iteration; done
 	done
 done
 
