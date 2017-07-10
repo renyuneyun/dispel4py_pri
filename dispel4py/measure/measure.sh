@@ -4,6 +4,8 @@ trap "exit;" SIGINT
 
 platform=$1
 
+source ~/self/Edinburgh/venv/dissertation/bin/activate
+
 measure_dir=$PWD/measure
 mkdir -p "$measure_dir"
 
@@ -12,8 +14,6 @@ if [ ! -f "$overall_file" ]; then
 	echo platform number_of_iteration np max_number_of_sieves max_prime mpi_time mpi_inc_time
 	echo platform number_of_iteration np max_number_of_sieves max_prime mpi_time mpi_inc_time > "$overall_file"
 fi
-
-source ~/self/Edinburgh/venv/dissertation/bin/activate
 
 function step {
 	np=$1
@@ -32,8 +32,10 @@ function step {
 	echo Number of initial nodes: $np > configure &&
 	echo Number of iterations: $number_of_iteration >> configure &&
 
-	/usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve -i $number_of_iteration > /dev/null 2> time_mpi_inc &&
-	echo "=================" &&
+	echo /usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration &&
+	/usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration > /dev/null 2> time_mpi_inc &&
+
+	echo /usr/bin/time -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration &&
 	/usr/bin/time -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration > /dev/null 2> time_mpi &&
 
 	#mpi_inc_time=`cat mpi_inc | tr -d '\n'` &&
