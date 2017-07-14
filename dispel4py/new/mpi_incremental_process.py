@@ -598,21 +598,21 @@ class MPIIncWrapper(MultithreadedWrapper):
                     self.create_communication_for_output(output_name, all_indicies)
                 elif tag == TAG_SPAWN_NEW_NODES:
                     dbg2("[{}] spawn new nodes prepare".format(rank))
-                    with self.comm_lock:
-                        dbg2("[{}] spawn new nodes prepared comm_lock".format(rank))
-                        with self.get_direction_comm(-1) as l_direction_comm:
-                            dbg2("[{}] spawning new nodes {}/{}".format(self.rank, self.rank, self.size))
-                            inter_comm = l_direction_comm.Spawn('', root=RANK_COORDINATOR)
-                            dbg2("[{}] new nodes spawned".format(rank))
-                            dbg2('[{}] inter_comm remote_size {} self_rank {}/{}'.format(rank, inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
-                            new_direction_comm = inter_comm.Merge(high=False)
-                            dbg2("[{}] inter_comm merged".format(rank))
-                            dbg2("[{}] duping to data_comm".format(rank))
-                            data_comm = new_direction_comm.Dup()
-                            dbg2("[{}] duping to brother_comm".format(rank))
-                            brother_comm = new_direction_comm.Dup()
-                            dbg2("[{}] duping finished".format(rank))
+                    with self.get_direction_comm(-1) as l_direction_comm:
+                        dbg2("[{}] spawning new nodes {}/{}".format(self.rank, self.rank, self.size))
+                        inter_comm = l_direction_comm.Spawn('', root=RANK_COORDINATOR)
+                        dbg2("[{}] new nodes spawned".format(rank))
+                        dbg2('[{}] inter_comm remote_size {} self_rank {}/{}'.format(rank, inter_comm.Get_remote_size(), inter_comm.Get_rank(), inter_comm.Get_size()))
+                        new_direction_comm = inter_comm.Merge(high=False)
+                        dbg2("[{}] inter_comm merged".format(rank))
+                        dbg2("[{}] duping to data_comm".format(rank))
+                        data_comm = new_direction_comm.Dup()
+                        dbg2("[{}] duping to brother_comm".format(rank))
+                        brother_comm = new_direction_comm.Dup()
+                        dbg2("[{}] duping finished".format(rank))
 
+                        with self.comm_lock:
+                            dbg2("[{}] spawn new nodes got comm_lock".format(rank))
                             self._direction_comm.append(new_direction_comm)
                             self._data_comm.append(data_comm)
                             self._brother_comm.append(brother_comm)
