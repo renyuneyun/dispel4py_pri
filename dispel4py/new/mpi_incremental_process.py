@@ -507,13 +507,13 @@ class MPIIncWrapper(MultithreadedWrapper):
                     output_name, all_indicies = msg
                     self.create_communication_for_output(output_name, all_indicies)
                 elif tag == TAG_SPAWN_NEW_NODES:
-                    with self.comm_lock:
-                        with self.get_direction_comm(-1) as l_direction_comm:
-                            inter_comm = l_direction_comm.Spawn('', root=RANK_COORDINATOR)
-                            new_direction_comm = inter_comm.Merge(high=False)
-                            data_comm = new_direction_comm.Dup()
-                            brother_comm = new_direction_comm.Dup()
+                    with self.get_direction_comm(-1) as l_direction_comm:
+                        inter_comm = l_direction_comm.Spawn('', root=RANK_COORDINATOR)
+                        new_direction_comm = inter_comm.Merge(high=False)
+                        data_comm = new_direction_comm.Dup()
+                        brother_comm = new_direction_comm.Dup()
 
+                        with self.comm_lock:
                             self._direction_comm.append(new_direction_comm)
                             self._data_comm.append(data_comm)
                             self._brother_comm.append(brother_comm)
