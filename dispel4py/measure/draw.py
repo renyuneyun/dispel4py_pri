@@ -69,12 +69,11 @@ for platform in all_platforms():
     for conf in all_confs_of_platform(platform):
         num_iters, mpi_times, mpi_inc_times = all_time_of_conf(platform, conf)
         label_old = "old {} {}".format(platform, conf)
-        p = plt.errorbar(num_iters, list(map(avg, mpi_times)), yerr=list(map(np.std, mpi_times)), capsize=capsize, label=label_old)
+        p = plt.errorbar(num_iters, list(map(avg, mpi_times)), yerr=list(map(np.std, mpi_times)), capsize=capsize, linestyle='dashed', label=label_old)
         color = p[0].get_color()
-        plt.plot(list(expand(num_iters, mpi_times)), list(flatten(mpi_times)), 'x', color=color)
+        plt.plot(list(expand(num_iters, mpi_times)), list(flatten(mpi_times)), '.', color=color)
         label_mine = "mine {} {}".format(platform, conf)
-        p = plt.errorbar(num_iters, list(map(avg, mpi_inc_times)), yerr=list(map(np.std, mpi_inc_times)), capsize=capsize, label=label_mine)
-        color = p[0].get_color()
+        plt.errorbar(num_iters, list(map(avg, mpi_inc_times)), yerr=list(map(np.std, mpi_inc_times)), capsize=capsize, color=color, label=label_mine)
         plt.plot(list(expand(num_iters, mpi_inc_times)), list(flatten(mpi_inc_times)), 'x', color=color)
 
 plt.legend()
