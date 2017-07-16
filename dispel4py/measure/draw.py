@@ -27,7 +27,7 @@ def all_platforms():
 
 def all_confs():
     targets = [record.c.np_mpi_inc, record.c.max_num_sieve, record.c.max_prime]
-    s = select(targets).distinct()
+    s = select(targets).distinct().order_by(record.c.max_num_sieve)
     results = conn.execute(s)
     for line in results:
         yield line
@@ -36,7 +36,7 @@ def all_records_of_platform(platform):
     s = select([record]).where(record.c.platform==platform)
     results = conn.execute(s)
     for line in results:
-        yield line[2:]
+        yield line[3:]
 
 def all_platforms_of_conf(conf):
     s = select([record.c.platform]).where(record.c.np_mpi_inc==conf[0]).where(record.c.max_num_sieve==conf[1]).where(record.c.max_prime==conf[2]).distinct()
@@ -52,7 +52,7 @@ def all_confs_of_platform(platform):
         yield line
 
 def all_time_of_conf(platform, conf):
-    s = select([record.c.num_iter, record.c.mpi_time, record.c.mpi_inc_time]).where(record.c.platform==platform).where(record.c.np_mpi_inc==conf[0]).where(record.c.max_num_sieve==conf[1]).where(record.c.max_prime==conf[2]).order_by(record.c.num_iter)
+    s = select([record.c.num_iter, record.c.mpi_time, record.c.mpi_inc_time]).where(record.c.outlier==False).where(record.c.platform==platform).where(record.c.np_mpi_inc==conf[0]).where(record.c.max_num_sieve==conf[1]).where(record.c.max_prime==conf[2]).order_by(record.c.num_iter)
     results = conn.execute(s)
     num_iters = []
     mpi_times = []
