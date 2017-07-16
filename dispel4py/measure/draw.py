@@ -25,11 +25,24 @@ def all_platforms():
     for line in results:
         yield line[0]
 
+def all_confs():
+    targets = [record.c.np_mpi_inc, record.c.max_num_sieve, record.c.max_prime]
+    s = select(targets).distinct()
+    results = conn.execute(s)
+    for line in results:
+        yield line
+
 def all_records_of_platform(platform):
     s = select([record]).where(record.c.platform==platform)
     results = conn.execute(s)
     for line in results:
         yield line[2:]
+
+def all_platforms_of_conf(conf):
+    s = select([record.c.platform]).where(record.c.np_mpi_inc==conf[0]).where(record.c.max_num_sieve==conf[1]).where(record.c.max_prime==conf[2]).distinct()
+    results = conn.execute(s)
+    for line in results:
+        yield line[0]
 
 def all_confs_of_platform(platform):
     targets = [record.c.np_mpi_inc, record.c.max_num_sieve, record.c.max_prime]
@@ -61,21 +74,26 @@ avg = lambda lst: sum(lst) / len(lst)
 flatten = lambda l: [item for sub in l for item in sub]
 expand = lambda l1, l2: flatten([[item] * len(l2[i]) for i, item in enumerate(l1)])
 
-plt.xlabel('number of iterations')
-plt.ylabel('time')
 capsize = 5
 
-for platform in all_platforms():
-    for conf in all_confs_of_platform(platform):
+confs = list(all_confs())
+fig, axes = plt.subplots(len(confs), sharex=True)
+
+fig.text(0.5, 0.04, 'number of iterations', ha='center')
+fig.text(0.04, 0.5, 'time', va='center', rotation='vertical')
+
+for i, conf in enumerate(confs):
+    subplot = axes[i]
+    for platform in all_platforms_of_conf(conf):
         num_iters, mpi_times, mpi_inc_times = all_time_of_conf(platform, conf)
         label_old = "old {} {}".format(platform, conf)
-        p = plt.errorbar(num_iters, list(map(avg, mpi_times)), yerr=list(map(np.std, mpi_times)), capsize=capsize, linestyle='dashed', label=label_old)
+        p = subplot.errorbar(num_iters, list(map(avg, mpi_times)), yerr=list(map(np.std, mpi_times)), capsize=capsize, linestyle='dashed', label=label_old)
         color = p[0].get_color()
-        plt.plot(list(expand(num_iters, mpi_times)), list(flatten(mpi_times)), '.', color=color)
+        subplot.plot(list(expand(num_iters, mpi_times)), list(flatten(mpi_times)), '.', color=color)
         label_mine = "mine {} {}".format(platform, conf)
-        plt.errorbar(num_iters, list(map(avg, mpi_inc_times)), yerr=list(map(np.std, mpi_inc_times)), capsize=capsize, color=color, label=label_mine)
-        plt.plot(list(expand(num_iters, mpi_inc_times)), list(flatten(mpi_inc_times)), 'x', color=color)
+        subplot.errorbar(num_iters, list(map(avg, mpi_inc_times)), yerr=list(map(np.std, mpi_inc_times)), capsize=capsize, color=color, label=label_mine)
+        subplot.plot(list(expand(num_iters, mpi_inc_times)), list(flatten(mpi_inc_times)), 'x', color=color)
+    subplot.legend()
 
-plt.legend()
 plt.show()
 
