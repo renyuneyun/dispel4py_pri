@@ -40,7 +40,7 @@ def import_every_line(lines):
             except ValueError:
                 platform, version, run_id, num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
         num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = int(num_of_iter), int(np), int(num_of_sieve), int(max_prime), float(mpi_time), float(mpi_inc_time)
-        ins1 = record.insert().values(outlier=is_outlier, platform=platform, version=version, run_id=run_id, module='mpi', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_time)
+        ins1 = record.insert().values(outlier=is_outlier, platform=platform, version=version, run_id=run_id, module='mpi', num_iter=num_of_iter, np=num_of_sieve+1, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_time)
         ins2 = record.insert().values(outlier=is_outlier, platform=platform, version=version, run_id=run_id, module='mpi_inc', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_inc_time)
         try:
             result = conn.execute(ins1)
