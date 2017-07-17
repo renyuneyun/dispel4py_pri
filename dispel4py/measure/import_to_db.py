@@ -25,17 +25,28 @@ def import_every_line(lines):
             continue
         parts = line.split()
         try:
-            int(parts[0])
-            start = 0
-            platform = ''
-        except:
-            start = 1
-            platform = parts[0]
-        num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts[start:]
+            num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
+            platform = None
+            varsion = None
+        except ValueError:
+            try:
+                platform, num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
+                if platform.endswith('_opt1'):
+                    platform = platform[:-5]
+                    version = 'opt1'
+                else:
+                    version = None
+            except ValueError:
+                platform, version, num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
         num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = int(num_of_iter), int(np), int(num_of_sieve), int(max_prime), float(mpi_time), float(mpi_inc_time)
-        ins = record.insert().values(platform=platform, num_iter=num_of_iter, np_mpi_inc=np, max_num_sieve=num_of_sieve, max_prime=max_prime, mpi_time=mpi_time, mpi_inc_time=mpi_inc_time)
+        ins1 = record.insert().values(platform=platform, version=version, module='mpi', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_time)
+        ins2 = record.insert().values(platform=platform, version=version, module='mpi_inc', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_inc_time)
         try:
-            result = conn.execute(ins)
+            result = conn.execute(ins1)
+        except IntegrityError:
+            print("Data exists")
+        try:
+            result = conn.execute(ins2)
         except IntegrityError:
             print("Data exists")
 

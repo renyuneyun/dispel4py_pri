@@ -20,55 +20,60 @@ from sqlalchemy.sql import select
 conn = engine.connect()
 
 def all_platforms():
-    s = select([record.c.platform]).distinct()
-    results = conn.execute(s)
-    for line in results:
-        yield line[0]
-
-def all_confs():
-    targets = [record.c.np_mpi_inc, record.c.max_num_sieve, record.c.max_prime]
-    s = select(targets).distinct().order_by(record.c.max_num_sieve)
-    results = conn.execute(s)
-    for line in results:
-        yield line
-
-def all_records_of_platform(platform):
-    s = select([record]).where(record.c.platform==platform)
-    results = conn.execute(s)
-    for line in results:
-        yield line[3:]
-
-def all_platforms_of_conf(conf):
-    s = select([record.c.platform]).where(record.c.np_mpi_inc==conf[0]).where(record.c.max_num_sieve==conf[1]).where(record.c.max_prime==conf[2]).distinct()
+    s = select([record.c.platform, record.c.version, record.c.run_id]).distinct()
     results = conn.execute(s)
     for line in results:
         yield line[0]
 
 def all_confs_of_platform(platform):
-    targets = [record.c.np_mpi_inc, record.c.max_num_sieve, record.c.max_prime]
-    s = select(targets).distinct()
+    targets = [record.c.max_num_sieve, record.c.max_prime]
+    s = select(targets) \
+            .where(record.c.platform==platform[0]).where(record.c.version==platform[1]).where(record.c.run_id==platform[2]) \
+            .distinct()
+    results = conn.execute(s)
+    for line in results:
+        yield line
+
+def all_confs():
+    targets = [record.c.max_num_sieve, record.c.max_prime]
+    s = select(targets).distinct().order_by(record.c.max_num_sieve)
+    results = conn.execute(s)
+    for line in results:
+        yield line
+
+def all_platforms_of_conf(conf):
+    s = select([record.c.platform, record.c.version, record.c.run_id]).where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]).distinct()
     results = conn.execute(s)
     for line in results:
         yield line
 
 def all_time_of_conf(platform, conf):
-    s = select([record.c.num_iter, record.c.mpi_time, record.c.mpi_inc_time]).where(record.c.outlier==False).where(record.c.platform==platform).where(record.c.np_mpi_inc==conf[0]).where(record.c.max_num_sieve==conf[1]).where(record.c.max_prime==conf[2]).order_by(record.c.num_iter)
+    s = select([record.c.num_iter, record.c.np, record.c.time, record.c.module]) \
+            .where(record.c.outlier==False).where(record.c.platform==platform[0]).where(record.c.version==platform[1]).where(record.c.run_id==platform[2]) \
+            .where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]) \
+            .order_by(record.c.np, record.c.num_iter)
     results = conn.execute(s)
-    num_iters = []
-    mpi_times = []
-    mpi_inc_times = []
+    mpi_times = {}
+    mpi_inc_times = {}
     for line in results:
         num_iter = line[0]
-        mpi_time = line[1]
-        mpi_inc_time = line[2]
-        if num_iters and num_iter == num_iters[-1]:
-            mpi_times[-1].append(mpi_time)
-            mpi_inc_times[-1].append(mpi_inc_time)
+        num_p = line[1]
+        time = line[2]
+        module = line[3]
+        if module == 'mpi':
+            if num_p not in mpi_times:
+                mpi_times[num_p] = ([], [])
+            con = mpi_times[num_p]
         else:
-            num_iters.append(num_iter)
-            mpi_times.append([mpi_time])
-            mpi_inc_times.append([mpi_inc_time])
-    return num_iters, mpi_times, mpi_inc_times
+            if num_p not in mpi_inc_times:
+                mpi_inc_times[num_p] = ([], [])
+            con = mpi_inc_times[num_p]
+        if con[0] and con[0][-1] == num_iter:
+            con[1][-1].append(time)
+        else:
+            con[0].append(num_iter)
+            con[1].append([time])
+    return mpi_times, mpi_inc_times
 
 avg = lambda lst: sum(lst) / len(lst)
 flatten = lambda l: [item for sub in l for item in sub]
@@ -84,16 +89,29 @@ fig.text(0.04, 0.5, 'time', va='center', rotation='vertical')
 
 for i, conf in enumerate(confs):
     subplot = axes[i]
+    subplot.set_title("max_num_sieve:{} max_prime:{}".format(conf[0], conf[1]))
     for platform in all_platforms_of_conf(conf):
-        num_iters, mpi_times, mpi_inc_times = all_time_of_conf(platform, conf)
-        label_old = "old {} {}".format(platform, conf)
-        p = subplot.errorbar(num_iters, list(map(avg, mpi_times)), yerr=list(map(np.std, mpi_times)), capsize=capsize, linestyle='dashed', label=label_old)
-        color = p[0].get_color()
-        subplot.plot(list(expand(num_iters, mpi_times)), list(flatten(mpi_times)), '.', color=color)
-        label_mine = "mine {} {}".format(platform, conf)
-        subplot.errorbar(num_iters, list(map(avg, mpi_inc_times)), yerr=list(map(np.std, mpi_inc_times)), capsize=capsize, color=color, label=label_mine)
-        subplot.plot(list(expand(num_iters, mpi_inc_times)), list(flatten(mpi_inc_times)), 'x', color=color)
+        platform_str = str(platform[0])
+        if platform[1]:
+            platform_str += "-{}".format(platform[1])
+            if platform[2]:
+                platform_str += "-{}".format(platform[2])
+        else:
+            if platform[2]:
+                platform_str += "--{}".format(platform[2])
+        mpi_times, mpi_inc_times = all_time_of_conf(platform, conf)
+        for num_p, (num_iters, times) in mpi_times.items():
+            label_old = "old {} np:{}".format(platform_str, num_p)
+            p = subplot.errorbar(num_iters, list(map(avg, times)), yerr=list(map(np.std, times)), capsize=capsize, linestyle='dashed', label=label_old)
+            color = p[0].get_color()
+            subplot.plot(list(expand(num_iters, times)), list(flatten(times)), '.', color=color)
+        for num_p, (num_iters, times) in mpi_inc_times.items():
+            label_mine = "mine {} np:{}".format(platform_str, num_p)
+            p = subplot.errorbar(num_iters, list(map(avg, times)), yerr=list(map(np.std, times)), capsize=capsize, label=label_mine)
+            color = p[0].get_color()
+            subplot.plot(list(expand(num_iters, times)), list(flatten(times)), 'x', color=color)
     subplot.legend()
 
+plt.suptitle('Execution time on different platforms under different configurations')
 plt.show()
 
