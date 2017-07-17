@@ -53,33 +53,53 @@ def all_platforms_of_conf(conf):
         yield line
 
 def all_time_of_conf(platform, conf):
-    s = select([record.c.num_iter, record.c.np, record.c.time, record.c.module]) \
-            .where(record.c.outlier==False).where(record.c.platform==platform[0]).where(record.c.version==platform[1])
-    if not combine_different_runs:
-        s = s.where(record.c.run_id==platform[2])
-    s = s.where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]) \
-            .order_by(record.c.np, record.c.num_iter)
-    results = conn.execute(s)
-    mpi_times = {}
-    mpi_inc_times = {}
-    for line in results:
-        num_iter = line[0]
-        num_p = line[1]
-        time = line[2]
-        module = line[3]
-        if module == 'mpi':
+    def get_mpi():
+        mpi_times = {}
+        s = select([record.c.num_iter, record.c.np, record.c.time]) \
+                .where(record.c.outlier==False).where(record.c.module=='mpi') \
+                .where(record.c.platform==platform[0])
+        if not combine_different_runs:
+            s = s.where(record.c.run_id==platform[2])
+        s = s.where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]) \
+                .order_by(record.c.np, record.c.num_iter)
+        results = conn.execute(s)
+        for line in results:
+            num_iter = line[0]
+            num_p = line[1]
+            time = line[2]
             if num_p not in mpi_times:
                 mpi_times[num_p] = ([], [])
             con = mpi_times[num_p]
-        else:
+            if con[0] and con[0][-1] == num_iter:
+                con[1][-1].append(time)
+            else:
+                con[0].append(num_iter)
+                con[1].append([time])
+        return mpi_times
+    def get_mpi_inc():
+        mpi_inc_times = {}
+        s = select([record.c.num_iter, record.c.np, record.c.time]) \
+                .where(record.c.outlier==False).where(record.c.module=='mpi_inc') \
+                .where(record.c.platform==platform[0]).where(record.c.version==platform[1])
+        if not combine_different_runs:
+            s = s.where(record.c.run_id==platform[2])
+        s = s.where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]) \
+                .order_by(record.c.np, record.c.num_iter)
+        results = conn.execute(s)
+        for line in results:
+            num_iter = line[0]
+            num_p = line[1]
+            time = line[2]
             if num_p not in mpi_inc_times:
                 mpi_inc_times[num_p] = ([], [])
             con = mpi_inc_times[num_p]
-        if con[0] and con[0][-1] == num_iter:
-            con[1][-1].append(time)
-        else:
-            con[0].append(num_iter)
-            con[1].append([time])
+            if con[0] and con[0][-1] == num_iter:
+                con[1][-1].append(time)
+            else:
+                con[0].append(num_iter)
+                con[1].append([time])
+        return mpi_inc_times
+    mpi_times, mpi_inc_times = get_mpi(), get_mpi_inc()
     return mpi_times, mpi_inc_times
 
 avg = lambda lst: sum(lst) / len(lst)
