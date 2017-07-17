@@ -24,23 +24,22 @@ def import_every_line(lines):
         if line.startswith('#'):
             continue
         parts = line.split()
+        platform = ''
+        varsion = ''
+        run_id = ''
         try:
             num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
-            platform = None
-            varsion = None
         except ValueError:
             try:
                 platform, num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
                 if platform.endswith('_opt1'):
                     platform = platform[:-5]
                     version = 'opt1'
-                else:
-                    version = None
             except ValueError:
-                platform, version, num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
+                platform, version, run_id, num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = parts
         num_of_iter, np, num_of_sieve, max_prime, mpi_time, mpi_inc_time = int(num_of_iter), int(np), int(num_of_sieve), int(max_prime), float(mpi_time), float(mpi_inc_time)
-        ins1 = record.insert().values(platform=platform, version=version, module='mpi', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_time)
-        ins2 = record.insert().values(platform=platform, version=version, module='mpi_inc', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_inc_time)
+        ins1 = record.insert().values(platform=platform, version=version, run_id=run_id, module='mpi', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_time)
+        ins2 = record.insert().values(platform=platform, version=version, run_id=run_id, module='mpi_inc', num_iter=num_of_iter, np=np, max_num_sieve=num_of_sieve, max_prime=max_prime, time=mpi_inc_time)
         try:
             result = conn.execute(ins1)
         except IntegrityError:

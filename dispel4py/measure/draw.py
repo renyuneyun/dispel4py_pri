@@ -19,6 +19,8 @@ from sqlalchemy.sql import select
 
 conn = engine.connect()
 
+combine_different_runs = True
+
 def all_platforms():
     s = select([record.c.platform, record.c.version, record.c.run_id]).distinct()
     results = conn.execute(s)
@@ -42,15 +44,20 @@ def all_confs():
         yield line
 
 def all_platforms_of_conf(conf):
-    s = select([record.c.platform, record.c.version, record.c.run_id]).where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]).distinct()
+    targets = [record.c.platform, record.c.version]
+    if not combine_different_runs:
+        targets.append(record.c.run_id)
+    s = select(targets).where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]).distinct()
     results = conn.execute(s)
     for line in results:
         yield line
 
 def all_time_of_conf(platform, conf):
     s = select([record.c.num_iter, record.c.np, record.c.time, record.c.module]) \
-            .where(record.c.outlier==False).where(record.c.platform==platform[0]).where(record.c.version==platform[1]).where(record.c.run_id==platform[2]) \
-            .where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]) \
+            .where(record.c.outlier==False).where(record.c.platform==platform[0]).where(record.c.version==platform[1])
+    if not combine_different_runs:
+        s = s.where(record.c.run_id==platform[2])
+    s = s.where(record.c.max_num_sieve==conf[0]).where(record.c.max_prime==conf[1]) \
             .order_by(record.c.np, record.c.num_iter)
     results = conn.execute(s)
     mpi_times = {}
@@ -94,10 +101,10 @@ for i, conf in enumerate(confs):
         platform_str = str(platform[0])
         if platform[1]:
             platform_str += "-{}".format(platform[1])
-            if platform[2]:
+            if not combine_different_runs and platform[2]:
                 platform_str += "-{}".format(platform[2])
         else:
-            if platform[2]:
+            if not combine_different_runs and platform[2]:
                 platform_str += "--{}".format(platform[2])
         mpi_times, mpi_inc_times = all_time_of_conf(platform, conf)
         for num_p, (num_iters, times) in mpi_times.items():
