@@ -96,32 +96,28 @@ mpi_times = {tuple(pure(conf, conf_cols)):
         for conf in all_of(conf_cols, where={'module':'mpi'}, distinct=True, order_by=['max_num_sieve'])}
 
 confs_mpi_inc = list(all_of(conf_cols, where={'module':'mpi_inc'}, distinct=True, order_by=['max_num_sieve']))
-fig, axes = plt.subplots(len(confs_mpi_inc), sharex=True)
 
-fig.text(0.5, 0.04, 'number of iterations', ha='center')
-fig.text(0.04, 0.5, 'time', va='center', rotation='vertical')
-
-drawn = {}
 for i, conf in enumerate(confs_mpi_inc):
-    subplot = axes[i]
-    subplot.set_title("max_num_sieve:{} max_prime:{}".format(conf['max_num_sieve'], conf['max_prime']))
     k_conf = tuple(pure(conf, conf_cols))
-    drawn[k_conf] = {}
-    for platform in all_of(['platform', 'version'] + ([] if combine_different_runs else ['run_id']), where=conf, distinct=True):
+    platforms = list(all_of(['platform', 'version'] + ([] if combine_different_runs else ['run_id']), where=conf, distinct=True))
+    fig, axes = plt.subplots(len(platforms), sharex=True)
+    fig.text(0.5, 0.04, 'number of iterations', ha='center')
+    fig.text(0.04, 0.5, 'time', va='center', rotation='vertical')
+    fig.suptitle("max_num_sieve:{} max_prime:{}".format(conf['max_num_sieve'], conf['max_prime']))
+    for j, platform in enumerate(platforms):
+        subplot = axes[j]
         k_platform = key_mpi_platform(platform)
-        if k_platform not in drawn[k_conf]:
-            try:
-                platform_str = str(platform['platform'])
-                if not combine_different_runs and platform['run_id']:
-                    platform_str += "-{}".format(platform['run_id'])
-                for num_p, (num_iters, times) in mpi_times[k_conf][k_platform].items():
-                    label_old = "old {} np:{}".format(platform_str, num_p)
-                    p = subplot.errorbar(num_iters, list(map(avg, times)), yerr=list(map(np.std, times)), capsize=capsize, linestyle='dashed', label=label_old)
-                    color = p[0].get_color()
-                    subplot.plot(list(expand(num_iters, times)), list(flatten(times)), '.', color=color)
-                drawn[k_conf][k_platform] = True
-            except KeyError:
-                drawn[k_conf][k_platform] = False
+        try:
+            platform_str = str(platform['platform'])
+            if not combine_different_runs and platform['run_id']:
+                platform_str += "-{}".format(platform['run_id'])
+            for num_p, (num_iters, times) in mpi_times[k_conf][k_platform].items():
+                label_old = "old {} np:{}".format(platform_str, num_p)
+                p = subplot.errorbar(num_iters, list(map(avg, times)), yerr=list(map(np.std, times)), capsize=capsize, linestyle='dashed', label=label_old)
+                color = p[0].get_color()
+                subplot.plot(list(expand(num_iters, times)), list(flatten(times)), '.', color=color)
+        except KeyError:
+            pass
         platform_str = str(platform['platform'])
         if platform['version']:
             platform_str += "-{}".format(platform['version'])
@@ -136,8 +132,8 @@ for i, conf in enumerate(confs_mpi_inc):
             p = subplot.errorbar(num_iters, list(map(avg, times)), yerr=list(map(np.std, times)), capsize=capsize, label=label_mine)
             color = p[0].get_color()
             subplot.plot(list(expand(num_iters, times)), list(flatten(times)), 'x', color=color)
-    subplot.legend()
+        subplot.legend()
 
-plt.suptitle('Execution time on different platforms under different configurations')
+#plt.suptitle('Execution time on different platforms under different configurations')
 plt.show()
 
