@@ -25,7 +25,7 @@ function step {
 
 	echo np:$np number_of_iteration:$number_of_iteration max_number_of_sieves:$max_number_of_sieves max_prime:$max_prime
 
-	wd=$measure_dir/`date` &&
+	wd=$measure_dir/`date +%Y-%m-%d.%H:%M:%S` &&
 	mkdir -p "$wd" &&
 	cd "$wd" &&
 	mkdir -p outputs/mpi{,_inc} &&
