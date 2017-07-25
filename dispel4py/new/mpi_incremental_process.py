@@ -138,6 +138,7 @@ class Coordinator(object):
         self.direction_comm = [comm.Dup()]
         self.data_comm = comm.Dup()
         self.brother_comm = comm.Dup()
+        self.comms = [[self.direction_comm[0]], [self.data_comm], [self.brother_comm]]
 
     @property
     def size(self):
@@ -171,6 +172,9 @@ class Coordinator(object):
                             break
                     else:
                         raise Exception("unexpected tag")
+        for comms in self.comms:
+            for comm in comms:
+                comm.Free()
 
     def assign_node(self, pe, is_source=True):
         found_enough_nodes = False
@@ -198,6 +202,9 @@ class Coordinator(object):
                     self.direction_comm.append(direction_comm)
                     self.data_comm = data_comm
                     self.brother_comm = brother_comm
+                    self.comms[0].append(direction_comm)
+                    self.comms[1].append(data_comm)
+                    self.comms[2].append(brother_comm)
 
                     size = direction_comm.Get_size()
             for target_rank in target_ranks:
@@ -319,6 +326,7 @@ class Executor(object):
         self.direction_comm = direction_comm
         self.data_comm = data_comm
         self.brother_comm = brother_comm
+        self.comms = [[direction_comm], [data_comm], [brother_comm]]
 
     def do_spawn(self):
         inter_comm = self.direction_comm.Spawn('', root=RANK_COORDINATOR)
@@ -329,6 +337,9 @@ class Executor(object):
         self.direction_comm = direction_comm
         self.data_comm = data_comm
         self.brother_comm = brother_comm
+        self.comms[0].append(direction_comm)
+        self.comms[1].append(data_comm)
+        self.comms[2].append(brother_comm)
         self.size = new_direction_comm.Get_size()
 
     def run(self):
@@ -364,11 +375,17 @@ class Executor(object):
                     self.direction_comm = wrapper._direction_comm[-1]
                     self.data_comm = wrapper._data_comm[-1]
                     self.brother_comm = wrapper._brother_comm[-1]
+                    for i, comms in (wrapper._direction_comm, wrapper._data_comm, wrapper._brother_comm):
+                        if len(comms) > 1:
+                            self.comms[i].append(comms[1:])
                 elif tag == TAG_FINALIZE:
                     finalized = True
                     break
                 elif tag == TAG_SPAWN_NEW_NODES:
                     self.do_spawn()
+        for comms in self.comms:
+            for comm in comms:
+                comm.Free()
 
 
 def executor(workflow, inputs, args):
