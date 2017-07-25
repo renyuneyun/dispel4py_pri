@@ -461,7 +461,7 @@ class Executor(object):
                     self.brother_comm = wrapper._brother_comm[-1]
                     for i, comms in enumerate((wrapper._direction_comm, wrapper._data_comm, wrapper._brother_comm)):
                         if len(comms) > 1:
-                            self.comms[i].append(comms[1:])
+                            self.comms[i].extend(comms[1:])
                 elif tag == TAG_FINALIZE:
                     finalized = True
                     break
