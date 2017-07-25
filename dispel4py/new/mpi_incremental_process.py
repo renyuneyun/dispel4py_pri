@@ -156,6 +156,7 @@ class Coordinator(object):
         self.direction_comm = [comm.Dup()]
         self.data_comm = comm.Dup()
         self.brother_comm = comm.Dup()
+        self.comms = [[self.direction_comm[0]], [self.data_comm], [self.brother_comm]]
 
     @property
     def size(self):
@@ -198,6 +199,9 @@ class Coordinator(object):
                         dbg0("[coordinator] unexpected tag: {} [from:{}]".format(tag, source_rank))
                         raise Exception("unexpected tag")
         dbg0("coordinator exit [max_used_nodes: {} (coordinator excluded)]".format(self.task_list.max_used_nodes))
+        for comms in self.comms:
+            for comm in comms:
+                comm.Free()
 
     def assign_node(self, pe: GenericPE, is_source=True) -> List[int]:
         dbg2("[assign_node]")
@@ -235,6 +239,9 @@ class Coordinator(object):
                     self.direction_comm.append(direction_comm)
                     self.data_comm = data_comm
                     self.brother_comm = brother_comm
+                    self.comms[0].append(direction_comm)
+                    self.comms[1].append(data_comm)
+                    self.comms[2].append(brother_comm)
 
                     size = direction_comm.Get_size()
                     dbg1("[coordinator] new nodes spawned: expected {} now total {}".format(num_to_spawn, size))
@@ -388,6 +395,7 @@ class Executor(object):
         self.direction_comm = direction_comm
         self.data_comm = data_comm
         self.brother_comm = brother_comm
+        self.comms = [[direction_comm], [data_comm], [brother_comm]]
 
     def do_spawn(self):
         dbg2("[executor {}] spawning new nodes {}/{}".format(rank, self.rank, self.size))
@@ -405,6 +413,9 @@ class Executor(object):
         self.direction_comm = direction_comm
         self.data_comm = data_comm
         self.brother_comm = brother_comm
+        self.comms[0].append(direction_comm)
+        self.comms[1].append(data_comm)
+        self.comms[2].append(brother_comm)
         self.size = new_direction_comm.Get_size()
 
     def run(self):
@@ -448,12 +459,18 @@ class Executor(object):
                     self.direction_comm = wrapper._direction_comm[-1]
                     self.data_comm = wrapper._data_comm[-1]
                     self.brother_comm = wrapper._brother_comm[-1]
+                    for i, comms in (wrapper._direction_comm, wrapper._data_comm, wrapper._brother_comm):
+                        if len(comms) > 1:
+                            self.comms[i].append(comms[1:])
                 elif tag == TAG_FINALIZE:
                     finalized = True
                     break
                 elif tag == TAG_SPAWN_NEW_NODES:
                     self.do_spawn()
         dbg0("[executor {}] finishing".format(rank))
+        for comms in self.comms:
+            for comm in comms:
+                comm.Free()
 
 
 def executor(workflow, inputs, args):
