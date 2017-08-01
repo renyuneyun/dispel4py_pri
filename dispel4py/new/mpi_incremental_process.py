@@ -289,6 +289,7 @@ class Coordinator(object):
 def coordinator(workflow, inputs, args):
     coord = Coordinator(workflow, inputs, args, size)
     coord.run()
+    return coord
 
 
 class Executor(object):
@@ -383,10 +384,13 @@ def process(workflow, inputs, args):
         print([(edge[0].getContainedObject().id,edge[1].getContainedObject().id) for edge in workflow.graph.edges()])
     if not args.spawned and rank == 0:
         t1 = MPI.Wtime()
-        coordinator(workflow, inputs, args)
+        coord = coordinator(workflow, inputs, args)
         t2 = MPI.Wtime()
         with open('mpi_inc', 'a') as fd:
             fd.write("{}\n".format(t2-t1))
+        with open('mpi_inc_nodes_stat', 'a') as fd:
+            fd.write("max_used_nodes: {} (excluding coordinator)\n".format(coord.task_list.max_used_nodes))
+            fd.write("number_of_nodes_in_total: {}\n".format(coord.size))
     else:
         executor(workflow, inputs, args)
 
