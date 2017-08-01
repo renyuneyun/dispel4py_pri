@@ -25,6 +25,9 @@ function step {
 
 	echo np:$np number_of_iteration:$number_of_iteration max_number_of_sieves:$max_number_of_sieves max_prime:$max_prime
 
+	fn_t_mpi=time_mpi
+	fn_t_mpi_inc=time_mpi_inc
+
 	wd=$measure_dir/`date +%Y-%m-%d.%H:%M:%S` &&
 	mkdir -p "$wd" &&
 	cd "$wd" &&
@@ -33,14 +36,14 @@ function step {
 	echo Number of initial nodes: $np > configure &&
 	echo Number of iterations: $number_of_iteration >> configure &&
 
-	echo /usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration &&
-	/usr/bin/time -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration > /dev/null 2> time_mpi_inc &&
+	echo /usr/bin/time -o $fn_t_mpi_inc -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration &&
+	/usr/bin/time -o $fn_t_mpi_inc -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration > stdout_mpi_inc 2> stderr_mpi_inc &&
 
-	echo /usr/bin/time -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration &&
-	/usr/bin/time -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration > /dev/null 2> time_mpi &&
+	echo /usr/bin/time -o $fn_t_mpi -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration &&
+	/usr/bin/time -o $fn_t_mpi -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration > stdout_mpi 2> stderr_mpi &&
 
-	mpi_inc_time=`cat time_mpi_inc | tr -d '\n'` &&
-	mpi_time=`cat time_mpi | tr -d '\n'` &&
+	mpi_inc_time=`cat $fn_t_mpi_inc | tr -d '\n'` &&
+	mpi_time=`cat $fn_t_mpi | tr -d '\n'` &&
 
 	echo $platform $version $run_id $number_of_iteration $np $max_number_of_sieves $max_prime $mpi_time $mpi_inc_time | tee -a "$overall_file"
 }
