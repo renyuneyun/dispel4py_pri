@@ -464,8 +464,21 @@ def process(workflow, inputs, args):
     global rank, size
     rank = comm.Get_rank()
     size = comm.Get_size()
-    if rank == 0:
-        print([(edge[0].getContainedObject().id,edge[1].getContainedObject().id) for edge in workflow.graph.edges()])
+    if hasattr(workflow, 'partition'):
+        if rank == 0:
+            print('Partitions: %s' % ', '.join(('[%s]' % ', '.join(
+                (pe.id for pe in part)) for part in workflow.partitions)))
+        workflow = processor.create_partitioned(workflow)
+        inputs = processor.map_inputs_to_partitions(workflow, inputs)
+        if rank == 0:
+            for node in workflow.graph.nodes():
+                wrapperPE = node.getContainedObject()
+                print('%s contains %s' % (wrapperPE.id,
+                                          [n.getContainedObject().id for n in
+                                           wrapperPE.workflow.graph.nodes()]))
+    else:
+        if rank == 0:
+            print([(edge[0].getContainedObject().id,edge[1].getContainedObject().id) for edge in workflow.graph.edges()])
     if not args.spawned and rank == 0:
         coordinator(workflow, inputs, args)
     else:
