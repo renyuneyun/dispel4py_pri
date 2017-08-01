@@ -306,14 +306,17 @@ class Coordinator(object):
                 prcs = processor._getNumProcesses(self.size, self.numSources, numproc, self.totalProcesses)
             else:
                 prcs = numproc
+            if prcs == 0:
+                prcs = numproc
             #prcs = 1
             for i, pe in enumerate(self.task_list):
                 if i == 0: continue
                 if pe == None:
                     assignables.append(i)
                     if len(assignables) == prcs:
+                        dbg2("enough assignable processes found [expected:{} needed:{}]".format(numproc, prcs))
                         return assignables
-            dbg0("no enough assignable processes [expected:{} needed:{} free:{}]".format(numproc, prcs, len(assignables)))
+            dbg1("no enough assignable processes [expected:{} needed:{} free:{}]".format(numproc, prcs, len(assignables)))
             raise NoEnoughNodesException("shouldn't run out of nodes")
         def assign(self, index: int, pe: GenericPE):
             self.task_list[index] = pe
