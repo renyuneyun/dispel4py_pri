@@ -42,7 +42,7 @@ function step {
 	mpi_inc_time=`cat time_mpi_inc | tr -d '\n'` &&
 	mpi_time=`cat time_mpi | tr -d '\n'` &&
 
-	echo $platform $version $run_id $number_of_iteration $np $max_number_of_sieves $max_prime $mpi_time $mpi_inc_time | tee "$overall_file"
+	echo $platform $version $run_id $number_of_iteration $np $max_number_of_sieves $max_prime $mpi_time $mpi_inc_time | tee -a "$overall_file"
 }
 
 pair_1="26 100"
