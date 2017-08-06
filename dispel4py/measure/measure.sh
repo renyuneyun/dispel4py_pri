@@ -3,7 +3,7 @@
 trap "exit;" SIGINT
 
 platform=$1
-version=opt1
+version=opt1.1_
 run_id=`date +%Y-%m-%d.%H:%M:%S`
 
 source ~/self/Edinburgh/venv/dissertation/bin/activate
