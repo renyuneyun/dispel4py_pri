@@ -22,6 +22,7 @@ metadata = MetaData()
 record = Table('record', metadata,
         Column('id', Integer, primary_key=True),
         Column('outlier', Boolean, server_default=expression.false()),
+        Column('workflow', String),
         Column('platform', String),
         Column('version', String),
         Column('run_id', String),
@@ -31,7 +32,7 @@ record = Table('record', metadata,
         Column('max_num_sieve', Integer),
         Column('max_prime', Integer),
         Column('time', Float),
-        UniqueConstraint('platform', 'version', 'run_id', 'module', 'num_iter', 'np', 'max_num_sieve', 'max_prime', 'time'),
+        UniqueConstraint('workflow', 'platform', 'version', 'run_id', 'module', 'num_iter', 'np', 'max_num_sieve', 'max_prime', 'time'),
         )
 
 metadata.create_all(engine)

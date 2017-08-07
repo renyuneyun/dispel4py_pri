@@ -2,7 +2,11 @@
 
 trap "exit;" SIGINT
 
-platform=$1
+if [ -nz $1 ]; then
+	platform=$1
+else
+	platform=unspecified_platform
+fi
 version=opt1.1_
 run_id=`date +%Y-%m-%d.%H:%M:%S`
 
@@ -13,7 +17,7 @@ mkdir -p "$measure_dir"
 
 overall_file="$measure_dir/overall"
 if [ ! -f "$overall_file" ]; then
-	echo platform version run_id number_of_iteration np max_number_of_sieves max_prime mpi_time mpi_inc_time | tee "$overall_file"
+	echo workflow platform version run_id module number_of_iteration np max_number_of_sieves max_prime time | tee "$overall_file"
 fi
 
 function step {
@@ -28,6 +32,17 @@ function step {
 	fn_t_mpi=time_mpi
 	fn_t_mpi_inc=time_mpi_inc
 
+	wf_mpi=repeatable_prime_sieve__static
+	wf_use_mpi=dispel4py.measure.graph.${wf_mpi}_$max_number_of_sieves
+	wf_mpi_inc=repeatable_prime_sieve
+	wf_use_mpi_inc=dispel4py.measure.graph.${wf_mpi_inc}_$max_prime
+
+	np_mpi=$(($max_number_of_sieves+1))
+	np_mpi_inc=$np
+
+	exec_mpi="/usr/bin/time -o $fn_t_mpi -f %e mpiexec -np $np_mpi dispel4py mpi $wf_use_mpi -i $number_of_iteration"
+	exec_mpi_inc="/usr/bin/time -o $fn_t_mpi_inc -f %e mpiexec -np $np_mpi_inc dispel4py mpi_inc $wf_use_mpi_inc -i $number_of_iteration"
+
 	wd=$measure_dir/`date +%Y-%m-%d.%H:%M:%S` &&
 	mkdir -p "$wd" &&
 	cd "$wd" &&
@@ -36,16 +51,17 @@ function step {
 	echo Number of initial nodes: $np > configure &&
 	echo Number of iterations: $number_of_iteration >> configure &&
 
-	echo /usr/bin/time -o $fn_t_mpi_inc -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration &&
-	/usr/bin/time -o $fn_t_mpi_inc -f %e mpiexec -np $np dispel4py mpi_inc dispel4py.measure.graph.repeatable_prime_sieve_$max_prime -i $number_of_iteration > stdout_mpi_inc 2> stderr_mpi_inc &&
+	echo $exec_mpi_inc &&
+	eval $exec_mpi_inc > stdout_mpi_inc 2> stderr_mpi_inc &&
 
-	echo /usr/bin/time -o $fn_t_mpi -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration &&
-	/usr/bin/time -o $fn_t_mpi -f %e mpiexec -np $(($max_number_of_sieves+1)) dispel4py mpi dispel4py.measure.graph.repeatable_prime_sieve__static_$max_number_of_sieves -i $number_of_iteration > stdout_mpi 2> stderr_mpi &&
+	echo $exec_mpi &&
+	eval $exec_mpi > stdout_mpi 2> stderr_mpi &&
 
-	mpi_inc_time=`cat $fn_t_mpi_inc | tr -d '\n'` &&
 	mpi_time=`cat $fn_t_mpi | tr -d '\n'` &&
+	mpi_inc_time=`cat $fn_t_mpi_inc | tr -d '\n'` &&
 
-	echo $platform $version $run_id $number_of_iteration $np $max_number_of_sieves $max_prime $mpi_time $mpi_inc_time | tee -a "$overall_file"
+	echo $wf_mpi $platform $version $run_id mpi $number_of_iteration $np_mpi $max_number_of_sieves $max_prime $mpi_time | tee -a "$overall_file" &&
+	echo $wf_mpi_inc $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc $max_number_of_sieves $max_prime $mpi_inc_time | tee -a "$overall_file"
 }
 
 pair_1="26 100"
