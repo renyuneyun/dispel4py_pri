@@ -125,7 +125,7 @@ Example implementation::
         '''
         Indicates if this PE should process inputs in FIFO order
         '''
-        return False
+        return True
 
     @property
     def repeatable(self):
