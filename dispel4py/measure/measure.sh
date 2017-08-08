@@ -2,7 +2,7 @@
 
 trap "exit;" SIGINT
 
-if [ -nz $1 ]; then
+if [ ! -z $1 ]; then
 	platform=$1
 else
 	platform=unspecified_platform
