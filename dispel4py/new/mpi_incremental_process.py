@@ -542,7 +542,10 @@ class MPIIncWrapper(MultithreadedWrapper):
         self.status = STATUS_ACTIVE
         self.request_locks = {output_name: Lock() for output_name in pe.outputconnections}
         self.request_events = {output_name: Event() for output_name in pe.outputconnections}
-        self.executor = ThreadPoolExecutor(max_workers=3)
+        if self.pe.FIFO:
+            self.executor = ThreadPoolExecutor(max_workers=1)
+        else:
+            self.executor = ThreadPoolExecutor(max_workers=3)
         self.targets = {}
         self.pending_messages = []
         self.fd = open("outputs/mpi_inc/{}".format(pe.id), 'a')
@@ -636,17 +639,18 @@ class MPIIncWrapper(MultithreadedWrapper):
 
     def _listen_data(self):
         inputs, status = self._read()
-        while status != STATUS_TERMINATED:
-            if inputs is not None:
-                if not self.pe.FIFO:
-                    self.executor.submit(self._new_input, (inputs))
-                else:
-                    self._new_input(inputs)
-                #self._new_input(inputs)
+        if status != STATUS_TERMINATED:
+            f = self.executor.submit(self._new_input, (inputs))
             inputs, status = self._read()
-        if not self.pe.FIFO:
-            self.executor.shutdown()
-            dbg1("[{}] executor shutted down".format(rank))
+            while status != STATUS_TERMINATED:
+                if inputs is not None:
+                    if self.pe.FIFO:
+                        f.result()
+                    f = self.executor.submit(self._new_input, (inputs))
+                    #self._new_input(inputs)
+                inputs, status = self._read()
+        self.executor.shutdown()
+        dbg1("[{}] executor shutted down".format(rank))
         self.status = STATUS_TERMINATED
 
     def _listen(self):
