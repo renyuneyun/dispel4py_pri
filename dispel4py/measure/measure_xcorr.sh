@@ -72,34 +72,32 @@ function step {
 	echo Number of iterations: $number_of_iteration >> configure &&
 
 	rm -rf "$xcorr_gen_dir/DATA" &&
-	rm -rf "$xcorr_gen_dir/XCORR" &&
 	mkdir "$xcorr_gen_dir/DATA" &&
-	mkdir "$xcorr_gen_dir/XCORR" &&
-
 	echo $exec_mpi_inc_prep &&
 	eval $exec_mpi_inc_prep > stdout_mpi_inc_prep 2> stderr_mpi_inc_prep &&
+	mpi_inc_time_prep=`cat $fn_t_mpi_inc_prep | tr -d '\n'` &&
+	echo $wf_mpi_inc_prep $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc_prep $max_number_of_sieves $max_prime $mpi_inc_time_prep | tee -a "$overall_file" &&
+
+	rm -rf "$xcorr_gen_dir/XCORR" &&
+	mkdir "$xcorr_gen_dir/XCORR" &&
 	echo $exec_mpi_inc_xcorr &&
 	eval $exec_mpi_inc_xcorr > stdout_mpi_inc_xcorr 2> stderr_mpi_inc_xcorr &&
+	mpi_inc_time_xcorr=`cat $fn_t_mpi_inc_xcorr | tr -d '\n'` &&
+	echo $wf_mpi_inc_xcorr $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc_xcorr $max_number_of_sieves $max_prime $mpi_inc_time_xcorr | tee -a "$overall_file"
 
 	rm -rf "$xcorr_gen_dir/DATA" &&
-	rm -rf "$xcorr_gen_dir/XCORR" &&
 	mkdir "$xcorr_gen_dir/DATA" &&
-	mkdir "$xcorr_gen_dir/XCORR" &&
-
 	echo $exec_mpi_prep &&
 	eval $exec_mpi_prep > stdout_mpi_prep 2> stderr_mpi_prep &&
+	mpi_time_prep=`cat $fn_t_mpi_prep | tr -d '\n'` &&
+	echo $wf_mpi_prep $platform $version $run_id mpi $number_of_iteration $np_mpi_prep $max_number_of_sieves $max_prime $mpi_time_prep | tee -a "$overall_file" &&
+
+	rm -rf "$xcorr_gen_dir/XCORR" &&
+	mkdir "$xcorr_gen_dir/XCORR" &&
 	echo $exec_mpi_xcorr &&
 	eval $exec_mpi_xcorr > stdout_mpi_xcorr 2> stderr_mpi_xcorr &&
-
-	mpi_time_prep=`cat $fn_t_mpi_prep | tr -d '\n'` &&
 	mpi_time_xcorr=`cat $fn_t_mpi_xcorr | tr -d '\n'` &&
-	mpi_inc_time_prep=`cat $fn_t_mpi_inc_prep | tr -d '\n'` &&
-	mpi_inc_time_xcorr=`cat $fn_t_mpi_inc_xcorr | tr -d '\n'` &&
-
-	echo $wf_mpi_prep $platform $version $run_id mpi $number_of_iteration $np_mpi_prep $max_number_of_sieves $max_prime $mpi_time_prep | tee -a "$overall_file" &&
-	echo $wf_mpi_xcorr $platform $version $run_id mpi $number_of_iteration $np_mpi_xcorr $max_number_of_sieves $max_prime $mpi_time_xcorr | tee -a "$overall_file" &&
-	echo $wf_mpi_inc_prep $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc_prep $max_number_of_sieves $max_prime $mpi_inc_time_prep | tee -a "$overall_file" &&
-	echo $wf_mpi_inc_xcorr $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc_xcorr $max_number_of_sieves $max_prime $mpi_inc_time_xcorr | tee -a "$overall_file"
+	echo $wf_mpi_xcorr $platform $version $run_id mpi $number_of_iteration $np_mpi_xcorr $max_number_of_sieves $max_prime $mpi_time_xcorr | tee -a "$overall_file"
 }
 
 all=(

@@ -68,15 +68,13 @@ function step {
 
 	echo $exec_mpi_inc &&
 	eval $exec_mpi_inc > stdout_mpi_inc 2> stderr_mpi_inc &&
+	mpi_inc_time=`cat $fn_t_mpi_inc | tr -d '\n'` &&
+	echo $wf_mpi_inc $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc $max_number_of_sieves $max_prime $mpi_inc_time | tee -a "$overall_file" &&
 
 	echo $exec_mpi &&
 	eval $exec_mpi > stdout_mpi 2> stderr_mpi &&
-
 	mpi_time=`cat $fn_t_mpi | tr -d '\n'` &&
-	mpi_inc_time=`cat $fn_t_mpi_inc | tr -d '\n'` &&
-
-	echo $wf_mpi $platform $version $run_id mpi $number_of_iteration $np_mpi $max_number_of_sieves $max_prime $mpi_time | tee -a "$overall_file" &&
-	echo $wf_mpi_inc $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc $max_number_of_sieves $max_prime $mpi_inc_time | tee -a "$overall_file"
+	echo $wf_mpi $platform $version $run_id mpi $number_of_iteration $np_mpi $max_number_of_sieves $max_prime $mpi_time | tee -a "$overall_file"
 }
 
 all=(
