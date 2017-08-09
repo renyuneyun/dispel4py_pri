@@ -64,13 +64,18 @@ function step {
 	echo $wf_mpi_inc $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc $max_number_of_sieves $max_prime $mpi_inc_time | tee -a "$overall_file"
 }
 
-pair_1="26 100"
-pair_2="168 1000"
-pair_3="1397 10000"
 all=(
-pair_1
-pair_2
-pair_3
+"26 100"
+"168 1000"
+"303 2000"
+"430 3000"
+"550 4000"
+"669 5000"
+"783 6000"
+"900 7000"
+"1007 8000"
+"1117 9000"
+"1397 10000"
 )
 
 np=3
@@ -79,7 +84,7 @@ echo Ready
 
 length=${#all[@]}
 for ((i=0;i<$length;i++)) do
-	pair=${!all[i]}
+	pair=${all[i]}
 	for ((number_of_iteration=1;number_of_iteration<100;number_of_iteration+=10)); do
 		for ((iter=0;iter<8;iter+=1)); do step $np $number_of_iteration $pair; done
 	done
