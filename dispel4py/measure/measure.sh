@@ -100,7 +100,7 @@ for ((i=0;i<$length;i++)) do
 	pair=${all[i]}
 	for ((number_of_iteration=$iteration_min;number_of_iteration<=$iteration_max;number_of_iteration+=$iteration_step)); do
 		for ((iter=0;iter<$num_repeat;iter+=1)); do
-			echo step $np $number_of_iteration $pair
+			step $np $number_of_iteration $pair
 		done
 	done
 done
