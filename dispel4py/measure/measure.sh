@@ -10,6 +10,12 @@ fi
 version=opt1.1_
 run_id=`date +%Y-%m-%d.%H:%M:%S`
 
+static=false
+iteration_min=1
+iteration_max=100
+iteration_step=10
+num_repeat=8
+
 source ~/self/Edinburgh/venv/dissertation/bin/activate
 
 measure_dir=$PWD/measure
@@ -34,11 +40,20 @@ function step {
 
 	wf_mpi=repeatable_prime_sieve__static
 	wf_use_mpi=dispel4py.measure.graph.${wf_mpi}_$max_number_of_sieves
-	wf_mpi_inc=repeatable_prime_sieve
-	wf_use_mpi_inc=dispel4py.measure.graph.${wf_mpi_inc}_$max_prime
+	if [ ! $static ]; then
+		wf_mpi_inc=repeatable_prime_sieve
+		wf_use_mpi_inc=dispel4py.measure.graph.${wf_mpi_inc}_$max_prime
+	else
+		wf_mpi_inc=$wf_mpi
+		wf_use_mpi_inc=$wf_use_mpi
+	fi
 
-	np_mpi=$(($max_number_of_sieves+1))
-	np_mpi_inc=$np
+	np_mpi=$((max_number_of_sieves+1))
+	if [ ! $static ]; then
+		np_mpi_inc=$np
+	else
+		np_mpi_inc=$((np_mpi+1))
+	fi
 
 	exec_mpi="/usr/bin/time -o $fn_t_mpi -f %e mpiexec -np $np_mpi dispel4py mpi $wf_use_mpi -i $number_of_iteration"
 	exec_mpi_inc="/usr/bin/time -o $fn_t_mpi_inc -f %e mpiexec -np $np_mpi_inc dispel4py mpi_inc $wf_use_mpi_inc -i $number_of_iteration"
@@ -85,8 +100,10 @@ echo Ready
 length=${#all[@]}
 for ((i=0;i<$length;i++)) do
 	pair=${all[i]}
-	for ((number_of_iteration=1;number_of_iteration<100;number_of_iteration+=10)); do
-		for ((iter=0;iter<8;iter+=1)); do step $np $number_of_iteration $pair; done
+	for ((number_of_iteration=$iteration_min;number_of_iteration<=$iteration_max;number_of_iteration+=$iteration_step)); do
+		for ((iter=0;iter<$num_repeat;iter+=1)); do
+			echo step $np $number_of_iteration $pair
+		done
 	done
 done
 
