@@ -151,6 +151,7 @@ def process(workflow, inputs, args):
             wrapper.sources = inputmappings[rank]
             wrapper.process()
 
+    comm.Barrier()
     if rank == 0:
         t2 = MPI.Wtime()
         with open('mpi', 'a') as fd:
