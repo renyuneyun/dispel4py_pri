@@ -26,6 +26,8 @@ if [ ! -f "$overall_file" ]; then
 	echo workflow platform version run_id module number_of_iteration np max_number_of_sieves max_prime time | tee "$overall_file"
 fi
 
+ulimit -n `ulimit -Hn`
+
 function step {
 	np=$1
 	number_of_iteration=$2
@@ -33,14 +35,12 @@ function step {
 	max_number_of_sieves=$3
 	max_prime=$4
 
-	echo np:$np number_of_iteration:$number_of_iteration max_number_of_sieves:$max_number_of_sieves max_prime:$max_prime
-
 	fn_t_mpi=time_mpi
 	fn_t_mpi_inc=time_mpi_inc
 
 	wf_mpi=repeatable_prime_sieve__static
 	wf_use_mpi=dispel4py.measure.graph.${wf_mpi}_$max_number_of_sieves
-	if [ ! $static ]; then
+	if ! $static; then
 		wf_mpi_inc=repeatable_prime_sieve
 		wf_use_mpi_inc=dispel4py.measure.graph.${wf_mpi_inc}_$max_prime
 	else
@@ -49,7 +49,7 @@ function step {
 	fi
 
 	np_mpi=$((max_number_of_sieves+1))
-	if [ ! $static ]; then
+	if ! $static; then
 		np_mpi_inc=$np
 	else
 		np_mpi_inc=$((np_mpi+1))
@@ -60,11 +60,14 @@ function step {
 
 	wd=$measure_dir/`date +%Y-%m-%d.%H:%M:%S` &&
 	mkdir -p "$wd" &&
+	echo Dir: $wd &&
 	cd "$wd" &&
 	mkdir -p outputs/mpi{,_inc} &&
 
 	echo Number of initial nodes: $np > configure &&
 	echo Number of iterations: $number_of_iteration >> configure &&
+	echo Number of sieve: $max_number_of_sieves >> configure &&
+	echo Number of prime: $max_prime >> configure &&
 
 	echo $exec_mpi_inc &&
 	eval $exec_mpi_inc > stdout_mpi_inc 2> stderr_mpi_inc &&
