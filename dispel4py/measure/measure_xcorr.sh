@@ -110,7 +110,7 @@ echo Ready
 
 length=${#all[@]}
 for ((i=0;i<$length;i++)) do
-	pair=${!all[i]}
+	pair=${all[i]}
 	for ((iter=0;iter<8;iter+=1)); do
 		step $np
 	done
