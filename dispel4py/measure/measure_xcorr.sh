@@ -23,7 +23,7 @@ mkdir -p "$measure_dir"
 
 overall_file="$measure_dir/overall"
 if [ ! -f "$overall_file" ]; then
-	echo workflow platform version run_id module days traces np time | tee "$overall_file"
+	echo workflow platform version run_id module days traces np time time_inside | tee "$overall_file"
 fi
 
 function step {
@@ -31,8 +31,10 @@ function step {
 
 	fn_t_mpi_prep=time_mpi_prep
 	fn_t_mpi_xcorr=time_mpi_xcorr
+	fn_t_mpi_inside=mpi
 	fn_t_mpi_inc_prep=time_mpi_inc_prep
 	fn_t_mpi_inc_xcorr=time_mpi_inc_xcorr
+	fn_t_mpi_inc_inside=mpi_inc
 
 	wf_prep=realtime_prep
 	wf_xcorr=realtime_xcorr
@@ -76,28 +78,32 @@ function step {
 	echo $exec_mpi_inc_prep &&
 	eval $exec_mpi_inc_prep > stdout_mpi_inc_prep 2> stderr_mpi_inc_prep &&
 	mpi_inc_time_prep=`cat $fn_t_mpi_inc_prep | tr -d '\n'` &&
-	echo $wf_mpi_inc_prep $platform $version $run_id mpi_inc $days $trs $np_mpi_inc_prep $mpi_inc_time_prep | tee -a "$overall_file" &&
+	mpi_inc_time_inside_prep=`cat $fn_t_mpi_inc_inside | tr -d '\n'` &&
+	echo $wf_mpi_inc_prep $platform $version $run_id mpi_inc $days $trs $np_mpi_inc_prep $mpi_inc_time_prep $mpi_inc_time_inside_prep | tee -a "$overall_file" &&
 
 	rm -rf "$xcorr_gen_dir/XCORR" &&
 	mkdir "$xcorr_gen_dir/XCORR" &&
 	echo $exec_mpi_inc_xcorr &&
 	eval $exec_mpi_inc_xcorr > stdout_mpi_inc_xcorr 2> stderr_mpi_inc_xcorr &&
 	mpi_inc_time_xcorr=`cat $fn_t_mpi_inc_xcorr | tr -d '\n'` &&
-	echo $wf_mpi_inc_xcorr $platform $version $run_id mpi_inc $days $trs $np_mpi_inc_xcorr $mpi_inc_time_xcorr | tee -a "$overall_file"
+	mpi_inc_time_inside_xcorr=`cat $fn_t_mpi_inc_inside | tr -d '\n'` &&
+	echo $wf_mpi_inc_xcorr $platform $version $run_id mpi_inc $days $trs $np_mpi_inc_xcorr $mpi_inc_time_xcorr $mpi_inc_time_inside_xcorr | tee -a "$overall_file"
 
 	rm -rf "$xcorr_gen_dir/DATA" &&
 	mkdir "$xcorr_gen_dir/DATA" &&
 	echo $exec_mpi_prep &&
 	eval $exec_mpi_prep > stdout_mpi_prep 2> stderr_mpi_prep &&
 	mpi_time_prep=`cat $fn_t_mpi_prep | tr -d '\n'` &&
-	echo $wf_mpi_prep $platform $version $run_id mpi $days $trs $np_mpi_prep $mpi_time_prep | tee -a "$overall_file" &&
+	mpi_time_inside_prep=`cat $fn_t_mpi_inside | tr -d '\n'` &&
+	echo $wf_mpi_prep $platform $version $run_id mpi $days $trs $np_mpi_prep $mpi_time_prep $mpi_time_inside_prep | tee -a "$overall_file" &&
 
 	rm -rf "$xcorr_gen_dir/XCORR" &&
 	mkdir "$xcorr_gen_dir/XCORR" &&
 	echo $exec_mpi_xcorr &&
 	eval $exec_mpi_xcorr > stdout_mpi_xcorr 2> stderr_mpi_xcorr &&
 	mpi_time_xcorr=`cat $fn_t_mpi_xcorr | tr -d '\n'` &&
-	echo $wf_mpi_xcorr $platform $version $run_id mpi $days $trs $np_mpi_xcorr $mpi_time_xcorr | tee -a "$overall_file"
+	mpi_time_inside_xcorr=`cat $fn_t_mpi_inside | tr -d '\n'` &&
+	echo $wf_mpi_xcorr $platform $version $run_id mpi $days $trs $np_mpi_xcorr $mpi_time_xcorr $mpi_time_inside_xcorr | tee -a "$overall_file"
 }
 
 all=(

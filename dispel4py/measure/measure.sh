@@ -23,7 +23,7 @@ mkdir -p "$measure_dir"
 
 overall_file="$measure_dir/overall"
 if [ ! -f "$overall_file" ]; then
-	echo workflow platform version run_id module number_of_iteration np max_number_of_sieves max_prime time | tee "$overall_file"
+	echo workflow platform version run_id module number_of_iteration np max_number_of_sieves max_prime time time_inside | tee "$overall_file"
 fi
 
 ulimit -n `ulimit -Hn`
@@ -36,7 +36,9 @@ function step {
 	max_prime=$4
 
 	fn_t_mpi=time_mpi
+	fn_t_mpi_inside=mpi
 	fn_t_mpi_inc=time_mpi_inc
+	fn_t_mpi_inc_inside=mpi_inc
 
 	wf_mpi=repeatable_prime_sieve__static
 	wf_use_mpi=dispel4py.measure.graph.${wf_mpi}_$max_number_of_sieves
@@ -72,12 +74,14 @@ function step {
 	echo $exec_mpi_inc &&
 	eval $exec_mpi_inc > stdout_mpi_inc 2> stderr_mpi_inc &&
 	mpi_inc_time=`cat $fn_t_mpi_inc | tr -d '\n'` &&
-	echo $wf_mpi_inc $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc $max_number_of_sieves $max_prime $mpi_inc_time | tee -a "$overall_file" &&
+	mpi_inc_time_inside=`cat $fn_t_mpi_inc_inside | tr -d '\n'` &&
+	echo $wf_mpi_inc $platform $version $run_id mpi_inc $number_of_iteration $np_mpi_inc $max_number_of_sieves $max_prime $mpi_inc_time $mpi_inc_time_inside | tee -a "$overall_file" &&
 
 	echo $exec_mpi &&
 	eval $exec_mpi > stdout_mpi 2> stderr_mpi &&
 	mpi_time=`cat $fn_t_mpi | tr -d '\n'` &&
-	echo $wf_mpi $platform $version $run_id mpi $number_of_iteration $np_mpi $max_number_of_sieves $max_prime $mpi_time | tee -a "$overall_file"
+	mpi_time_inside=`cat $fn_t_mpi_inside | tr -d '\n'` &&
+	echo $wf_mpi $platform $version $run_id mpi $number_of_iteration $np_mpi $max_number_of_sieves $max_prime $mpi_time $mpi_time_inside | tee -a "$overall_file"
 }
 
 all=(
